@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from abc import ABC, abstractmethod
@@ -57,6 +58,7 @@ class BrowserBackend(Protocol):
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult: ...
 
@@ -80,6 +82,7 @@ class BrowserClient(Protocol):
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult: ...
 
@@ -132,6 +135,7 @@ class BrowserPool:
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult:
         name = self.resolve(backend)
@@ -152,6 +156,7 @@ class BrowserPool:
             timeout=timeout if timeout is not None else self._timeout_ms,
             network_idle_timeout=network_idle_timeout,
             click=click,
+            click_all=click_all,
             scroll=scroll,
         )
 
@@ -291,6 +296,7 @@ class _LocalBackend(ABC):
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
@@ -307,6 +313,7 @@ class _LocalBackend(ABC):
                     timeout=effective,
                     network_idle_timeout=network_idle_timeout,
                     click=click,
+                    click_all=click_all,
                     scroll=scroll,
                 )
         finally:
@@ -323,6 +330,7 @@ class _LocalBackend(ABC):
         timeout: float,
         network_idle_timeout: float | None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult:
         page: _PageLike | None = None
@@ -353,6 +361,13 @@ class _LocalBackend(ABC):
                     await page.click(click, timeout=max(1.0, (deadline - time.monotonic()) * 1000))
                 except Exception as exc:
                     logger.debug("browser click failed (ignored)", selector=click, error=str(exc))
+            if click_all is not None:
+                # 一次点击所有匹配项: 多组图/多标签页的页面需要逐个触发才把各自的内容插进 DOM.
+                try:
+                    expr = f"document.querySelectorAll({json.dumps(click_all)}).forEach(e => e.click())"
+                    await page.evaluate(expr)
+                except Exception as exc:
+                    logger.debug("browser click_all failed (ignored)", selector=click_all, error=str(exc))
             if scroll > 0:
                 for _ in range(scroll):
                     try:
@@ -361,7 +376,7 @@ class _LocalBackend(ABC):
                         logger.debug("browser scroll failed (ignored)", error=str(exc))
                         break
                     await asyncio.sleep(0.6)
-            if click is not None or scroll > 0:
+            if click is not None or click_all is not None or scroll > 0:
                 # 交互会触发新的 XHR/懒加载: 给它们一个有上限的静默窗口, 再读正文.
                 budget = min(_INTERACTION_IDLE_MS, _remaining_ms(deadline))
                 if budget > 0:
@@ -588,9 +603,16 @@ class SolverBackend:
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult:
-        if wait_for is not None or network_idle_timeout is not None or click is not None or scroll:
+        if (
+            wait_for is not None
+            or network_idle_timeout is not None
+            or click is not None
+            or click_all is not None
+            or scroll
+        ):
             logger.debug("solver ignores wait_for, network idle, click and scroll", scope=scope)
         effective = timeout if timeout is not None else self._default_timeout
         async with self._semaphore, self._lock_for(scope):

@@ -119,6 +119,7 @@ class HttpClient:
         encoding: str = "utf-8",
         wait_for: str | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> str:
         """取 HTML; ``wait_for`` / ``click`` / ``scroll`` 只在渲染路径生效, 直连时忽略.
@@ -129,19 +130,31 @@ class HttpClient:
         scope = self._scope(url)
         if self._policy.should_render(scope):
             return await self._render(
-                url, headers=headers, cookies=cookies, wait_for=wait_for, click=click, scroll=scroll
+                url,
+                headers=headers,
+                cookies=cookies,
+                wait_for=wait_for,
+                click=click,
+                click_all=click_all,
+                scroll=scroll,
             )
         text = await self.get_text(url, headers=headers, cookies=cookies, encoding=encoding)
         reason = classify_block(text)
         if reason is None:
             if wait_for is not None:
                 logger.debug("wait_for ignored on direct response", url=url, selector=wait_for)
-            if click is not None or scroll:
-                logger.debug("click/scroll ignored on direct response", url=url)
+            if click is not None or click_all is not None or scroll:
+                logger.debug("click/click_all/scroll ignored on direct response", url=url)
             return text
         if self._policy.escalate(scope, reason):
             return await self._render(
-                url, headers=headers, cookies=cookies, wait_for=wait_for, click=click, scroll=scroll
+                url,
+                headers=headers,
+                cookies=cookies,
+                wait_for=wait_for,
+                click=click,
+                click_all=click_all,
+                scroll=scroll,
             )
         raise SourceError(reason, detail=url)
 
@@ -192,6 +205,7 @@ class HttpClient:
         timeout: float | None = None,
         network_idle: bool = True,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> str:
         # 未配置后端或获取失败抛 RequestError; 拦截页抛 SourceError.
@@ -209,6 +223,7 @@ class HttpClient:
             # 有选择器时它就是就绪信号; 没有才退回到有上限的网络静默. 探测不必等静默.
             network_idle_timeout=None if wait_for is not None or not network_idle else _NETWORK_IDLE_TIMEOUT_MS,
             click=click,
+            click_all=click_all,
             scroll=scroll,
         )
         if html is None:

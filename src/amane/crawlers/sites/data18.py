@@ -39,8 +39,19 @@ _COOKIES = {
 _BASE = "https://www.data18.com"
 #: 剧照大图: 前缀与文件名形态都因场景而异, 只能从渲染后的正文取.
 _IMB_LARGE = re.compile(r"https://imb\.dt18\.com/(\d+)/(\d+)/(\d+)/(?P<t>t?)\d+\.jpg")
-#: Photoset 那一组的入口: 同一页还有 Primary 与 Video Stills, 只点带 ``Photoset`` 的那块.
-_PHOTOSET_TAB = "xpath=//div[contains(@class, 'changeimggallery') and contains(., 'Photoset')]"
+#: 剧照组的入口: 一个场景可能有多组 Photoset (如 5 张的主集 + 15 张的加集), 组间切换互斥,
+#: 必须逐组渲染才拿得到各自的图片.
+_PHOTOSET_TABS = re.compile(
+    r'id="(?P<id>gallery\d+)"[^>]*>'
+    r'(?:(?!id="gallery).)*?'            # 同组内找, 不跨到下一组
+    r'Photoset\s*<b>(?P<count>\d+)</b>',
+    re.IGNORECASE | re.DOTALL,
+)
+#: 预告片: 页面点开播放器后由 ``cvs.dt18.com`` 提供, 路径与剧照前缀不同.
+_TRAILER_PLAY = ".playtrailer"
+_TRAILER_SRC = re.compile(r"https://cvs\.dt18\.com/scenes/\d+/\d+/\d+/\d+\.mp4")
+#: 场景页里的大图地址: ``media/scenes/<a>/<b>/<key>-<slug>.jpg``.
+_SCENE_KEY = re.compile(r"media/scenes/\d+/\d+/(\d+)-[a-z0-9\-]+\.jpg", re.IGNORECASE)
 #: 图组数量: ``Photoset 15`` / ``Video Stills 32``.
 _PHOTOSET_COUNT = re.compile(r"Photoset\s*<b>(\d+)</b>", re.IGNORECASE)
 _MOVIE_LINK = re.compile(r'href="(https://www\.data18\.com/movies/[^"#]+)"')
@@ -57,6 +68,16 @@ def search_key(title: str) -> str:
     return re.sub(r"\s*#\d+\s*$", "", head).strip()
 
 
+def _image_prefix(text: str | None) -> str | None:
+    """从渲染后的正文取剧照前缀; 前缀与文件名形态都因场景而异, 不能拼."""
+    if text is None:
+        return None
+    found = _IMB_LARGE.search(text)
+    if found is None:
+        return None
+    return f"https://imb.dt18.com/{found[1]}/{found[2]}/{found[3]}/{found['t']}"
+
+
 def _result_links(text: str) -> list[str]:
     """检索结果是 movie 与 scene 的混排, 两种都要."""
     return [*_MOVIE_LINK.findall(text), *_SCENE_LINK.findall(text)]
@@ -69,7 +90,7 @@ class Data18Crawler(Crawler):
             name=SiteName.DATA18,
             base_url=_BASE,
             # 剧照与缩略图在 img CDN 上; 列出它们, 站点级代理才会覆盖到这些 host.
-            urls=["https://imb.dt18.com", "https://cdn.dt18.com"],
+            urls=["https://imb.dt18.com", "https://cdn.dt18.com", "https://cvs.dt18.com"],
             cookies=dict(_COOKIES),
             # 图片 CDN 校验 Referer: 裸请求一律 403, 同源引用即可放行.
             same_origin_referer=True,
@@ -138,40 +159,59 @@ class Data18Crawler(Crawler):
         return None
 
     async def _scene_metadata(self, scene_url: str, wanted: list[str]) -> MediaMetadata | None:
+        """一个场景可能有多组 Photoset, 组间切换互斥: 逐组渲染才能拿到各自的图."""
+        first = await self._render(scene_url)
+        if first is None:
+            return None
+        page_title = extract_text(Selector(text=first), "//title/text()") or ""
+        haystack = page_title.casefold()
+        # 场景页标题只写主演 (``{出演者} in {作品名}``), 要求全部演员都在会永远匹配不上.
+        if not any(name in haystack for name in wanted):
+            return None
+        groups = [(m["id"], int(m["count"])) for m in _PHOTOSET_TABS.finditer(first)]
+        if not groups:
+            return None
+        gallery: list[str] = []
+        for group_id, count in groups:
+            if count <= 0:
+                continue
+            body = await self._render(scene_url, click=f"#{group_id}")
+            prefix = _image_prefix(body)
+            if prefix is None:
+                continue
+            gallery.extend(f"{prefix}{index:02d}.jpg" for index in range(1, count + 1))
+        if not gallery:
+            return None
+        trailer = await self._trailer(scene_url)
+        key_match = _SCENE_KEY.search(first)
+        return MediaMetadata(
+            number=key_match.group(1) if key_match else "",
+            trailer_urls=[trailer] if trailer else [],
+            extrafanart=list(dict.fromkeys(gallery)),
+            source_url=scene_url,
+        )
+
+    async def _render(self, scene_url: str, *, click: str | None = None) -> str | None:
         try:
-            text = await self.client.get_html(
+            return await self.client.get_html(
                 scene_url,
                 cookies=self.cookies,
                 headers={"Referer": f"{self.base_url}/"},
-                click=_PHOTOSET_TAB,
+                click=click,
                 scroll=4,
             )
         except RequestError as exc:
             if exc.reason is FailureReason.NOT_FOUND:
                 return None
             raise
-        page_title = extract_text(Selector(text=text), "//title/text()") or ""
-        haystack = page_title.casefold()
-        # 场景页标题只写主演 (``{出演者} in {作品名}``), 要求全部演员都在会永远匹配不上.
-        if not any(name in haystack for name in wanted):
+
+    async def _trailer(self, scene_url: str) -> str | None:
+        """点开播放器后正文里才有 mp4 地址; 取不到按没有处理, 不阻断剧照."""
+        body = await self._render(scene_url, click=_TRAILER_PLAY)
+        if body is None:
             return None
-        count = _PHOTOSET_COUNT.search(text)
-        if count is None:
-            return None
-        total = int(count.group(1))
-        if total <= 0:
-            return None
-        found = _IMB_LARGE.search(text)
-        if found is None:
-            # 正文里没有剧照地址: 前端未渲染出来, 不猜路径.
-            self.logger.debug("photoset urls not rendered", url=scene_url)
-            return None
-        prefix = f"https://imb.dt18.com/{found[1]}/{found[2]}/{found[3]}/{found['t']}"
-        return MediaMetadata(
-            number=found[3],
-            extrafanart=[f"{prefix}{index:02d}.jpg" for index in range(1, total + 1)],
-            source_url=scene_url,
-        )
+        found = _TRAILER_SRC.search(body)
+        return found.group(0) if found else None
 
     async def _text(self, url: str) -> str | None:
         try:

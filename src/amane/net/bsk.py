@@ -417,9 +417,10 @@ class BskBackend:
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
         click: str | None = None,
+        click_all: str | None = None,
         scroll: int = 0,
     ) -> BrowserPageResult:
-        if click is not None or scroll:
+        if click is not None or click_all is not None or scroll:
             # bsk 只做导航与等待: 交互需要调用方换成 playwright 系后端.
             logger.debug("bsk ignores click and scroll", scope=scope)
         if self._closed:

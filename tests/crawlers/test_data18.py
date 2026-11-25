@@ -7,7 +7,7 @@ import pytest
 from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import FilmActor, SearchQuery
-from amane.crawlers.sites.data18 import Data18Crawler, search_key
+from amane.crawlers.sites.data18 import _PHOTOSET_TABS, Data18Crawler, search_key
 
 MOVIE_PAGE = """<html><head><title>Movie</title></head><body>
 <a href="https://www.data18.com/scenes/3120555">a</a>
@@ -15,12 +15,24 @@ MOVIE_PAGE = """<html><head><title>Movie</title></head><body>
 </body></html>"""
 
 
-def _scene_page(actress: str, photoset: int = 15) -> str:
-    """渲染后才会出现的剧照地址; 前缀与文件名形态都因场景而异, 这里用真实形态."""
+def _scene_page(actress: str, photoset: int = 15, *, extra_group: int = 0) -> str:
+    """渲染后才会出现的剧照地址; 前缀与文件名形态都因场景而异, 这里用真实形态.
+
+    ``extra_group`` > 0 时额外给一组 Photoset: 一个场景可能有多组, 组间切换互斥.
+    """
+    groups = (
+        f'<div id="gallery1001" class="changeimggallery"><span class="gen bold">Gallery #1</span>'
+        f'&nbsp;<span class="gen11">Photoset <b>{photoset}</b></span></div>'
+    )
+    if extra_group:
+        groups += (
+            f'<div id="gallery1901" class="changeimggallery"><span class="gen bold">Gallery #2</span>'
+            f'&nbsp;<span class="gen11">Photoset <b>{extra_group}</b></span></div>'
+        )
     return f"""<html><head><title>{actress} in Omg! I Fucked My Bratty Student 2 | DATA18</title></head>
 <body>
+{groups}
 <img src="https://cdn.dt18.com/media/scenes/3/5/120556-melody-marks-omg-i-fucked.jpg">
-<span>Photoset <b>{photoset}</b></span>
 <img data-src="https://imb.dt18.com/314/128/120556/t01.jpg">
 </body></html>"""
 
@@ -60,6 +72,31 @@ def _query(actors: list[str], title: str = "Title #02 - A & B") -> SearchQuery:
         number="x",
         partial_result=AggregatedMetadata(number="x", title=title, actors=[FilmActor(name=name) for name in actors]),
     )
+
+
+def _group(gid: str, count: int) -> str:
+    return (
+        f'<div id="{gid}" class="changeimggallery"><span class="gen bold">Gallery #1</span>'
+        f'&nbsp;<span class="gen11">Photoset <b>{count}</b></span></div>'
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "page", "expected"),
+    [
+        ("单组", _group("gallery1001", 15), [("gallery1001", 15)]),
+        # 一个场景可能有多组 Photoset, 组间切换互斥, 必须全部识别出来逐组渲染.
+        ("两组", _group("gallery1001", 5) + _group("gallery1901", 15), [("gallery1001", 5), ("gallery1901", 15)]),
+        # Video Stills / Primary 不是 Photoset, 不参与.
+        (
+            "只有 Video Stills",
+            '<div id="gallery1101"><span>Gallery #2</span><span>Video Stills <b>37</b></span></div>',
+            [],
+        ),
+    ],
+)
+def test_photoset_tabs(label: str, page: str, expected: list[tuple[str, int]]) -> None:
+    assert [(m["id"], int(m["count"])) for m in _PHOTOSET_TABS.finditer(page)] == expected, label
 
 
 @pytest.mark.asyncio
