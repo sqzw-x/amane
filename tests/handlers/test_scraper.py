@@ -1139,3 +1139,30 @@ class TestRefreshHandler:
         assert result.result.scrape == n
         scrapes = [f for f in (result.followups or []) if f.task_type == TaskType.SCRAPE]
         assert len(scrapes) == n
+
+
+class _FakeDbData:
+    def __init__(self, source_urls: object) -> None:
+        self.source_urls = source_urls
+
+
+def test_previous_homepages_picks_official_only() -> None:
+    """只复用官网类来源记下的作品页: 索引站的地址读不出增量, 还会白跑一次请求."""
+    from amane.handlers.scrape import _previous_homepages
+
+    db = _FakeDbData(
+        {
+            "theporndb": "https://theporndb.net/scenes/x",
+            "official_ai": "https://officialdreddxxx.com/scene/melody-marks-2/",
+            "data18": "https://www.data18.com/scenes/1",
+        }
+    )
+    assert _previous_homepages(db) == ["https://officialdreddxxx.com/scene/melody-marks-2/"]
+
+
+def test_previous_homepages_tolerates_bad_shape() -> None:
+    from amane.handlers.scrape import _previous_homepages
+
+    assert _previous_homepages(None) == []
+    assert _previous_homepages(_FakeDbData("not a dict")) == []
+    assert _previous_homepages(_FakeDbData({"official_ai": 123})) == []

@@ -50,9 +50,10 @@ _PHOTOSET_TABS = re.compile(
 #: 预告片: 页面点开播放器后由 ``cvs.dt18.com`` 提供, 路径与剧照前缀不同.
 _TRAILER_PLAY = ".playtrailer"
 _PREVIEW_PLAY = ".playpreview"
-#: 预告片与预览片在不同域上; 路径形态也不同, 不能互相推导.
-_TRAILER_SRC = re.compile(r"https://cvs\.dt18\.com/scenes/\d+/\d+/\d+/\d+\.mp4")
-_PREVIEW_SRC = re.compile(r"https://cvm\.dt18\.com/scenes/\d+/\d+/\d+\.mp4")
+#: 预告片与预览片在不同域上 (cvs / cvm), 路径形态也不同, 不能互相推导.
+#: 注意播放器行为不一致: 有的场景点 ``playtrailer`` 出来的是 cvs, 有的只有 cvm —— 按域名判种类,
+#: 不能按点了哪个按钮判.
+_VIDEO = re.compile(r"https://(?:cvs|cvm)\.dt18\.com/scenes/\d+/\d+/\d+(?:/\d+)?\.mp4")
 #: 场景页里的大图地址: ``media/scenes/<a>/<b>/<key>-<slug>.jpg``.
 _SCENE_KEY = re.compile(r"media/scenes/\d+/\d+/(\d+)-[a-z0-9\-]+\.jpg", re.IGNORECASE)
 #: 图组数量: ``Photoset 15`` / ``Video Stills 32``.
@@ -213,33 +214,29 @@ class Data18Crawler(Crawler):
                 return None
             raise
 
-    def _video_kinds(self) -> tuple[tuple[str, re.Pattern[str]], ...]:
-        """按站点配置决定抓哪种视频; 默认两者都抓."""
+    def _video_kinds(self) -> tuple[str, ...]:
+        """按站点配置决定收哪几种视频; 默认两者都收."""
         mode = self.config.trailer_mode if self.config is not None else TrailerMode.ALL
-        trailer = (_TRAILER_PLAY, _TRAILER_SRC)
-        preview = (_PREVIEW_PLAY, _PREVIEW_SRC)
         match mode:
             case TrailerMode.TRAILER:
-                return (trailer,)
+                return ("cvs",)
             case TrailerMode.PREVIEW:
-                return (preview,)
+                return ("cvm",)
             case _:
-                return (trailer, preview)
+                return ("cvs", "cvm")
 
     async def _videos(self, scene_url: str) -> list[str]:
-        """预告片与预览片各自要单独点开播放器才会出现在正文里.
-
-        两种视频在不同域上, 路径不能互相推导; 缺哪个就少哪个, 不阻断剧照.
-        """
+        """点开播放器后正文里才有视频地址; 同一次点击可能给出任一域, 两次都点再按域归类."""
         found: list[str] = []
-        for selector, pattern in self._video_kinds():
+        for selector in (_TRAILER_PLAY, _PREVIEW_PLAY):
             body = await self._render(scene_url, click=selector)
             if body is None:
                 continue
-            match = pattern.search(body)
-            if match is not None:
-                found.append(match.group(0))
-        return found
+            for url in _VIDEO.findall(body):
+                if url not in found:
+                    found.append(url)
+        wanted = self._video_kinds()
+        return [url for url in found if any(f"://{kind}." in url for kind in wanted)]
 
     async def _text(self, url: str) -> str | None:
         try:

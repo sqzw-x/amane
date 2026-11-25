@@ -120,6 +120,7 @@ async def aggregate(
     multi_lang_sites: frozenset[SourceName] = MULTI_LANGUAGE_SOURCE_IDS,
     deferred_sites: frozenset[SourceName] = frozenset(),
     last_resort_sites: frozenset[SourceName] = frozenset(),
+    previous_homepages: Sequence[str] = (),
 ) -> AggregateResult:
     fl = field_language or {}
     snapshots = cache or {}
@@ -134,6 +135,7 @@ async def aggregate(
         on_progress=on_progress,
         deferred_sites=deferred_sites,
         last_resort_sites=last_resort_sites,
+        previous_homepages=previous_homepages,
     )
 
     if not state.fetched:
@@ -187,10 +189,13 @@ async def execute_graph(
     on_progress: ProgressCallback | None = None,
     deferred_sites: frozenset[SourceName] = frozenset(),
     last_resort_sites: frozenset[SourceName] = frozenset(),
+    previous_homepages: Sequence[str] = (),
 ) -> ExecutionState:
     """两段并发请求; 段间给声明来源注入已定值单源字段与第一段已抓到的图片地址, 全部结束后按字段链拼接多源字段."""
     snapshots = db_cache or {}
     state = ExecutionState(number=query.number)
+    # 上次找到的官网链接先放进快照: 通用官网源据此免掉一次模型推断.
+    state.result.homepage_urls.extend(previous_homepages)
     deferred = {str(site) for site in deferred_sites}
     field_total = len(SCALAR_FIELDS)
 
