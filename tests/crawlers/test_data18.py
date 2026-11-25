@@ -8,6 +8,7 @@ from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import FilmActor, SearchQuery
 from amane.crawlers.sites.data18 import _PHOTOSET_TABS, Data18Crawler, search_key
+from amane.enums import TrailerMode
 
 MOVIE_PAGE = """<html><head><title>Movie</title></head><body>
 <a href="https://www.data18.com/scenes/3120555">a</a>
@@ -72,6 +73,22 @@ def _query(actors: list[str], title: str = "Title #02 - A & B") -> SearchQuery:
         number="x",
         partial_result=AggregatedMetadata(number="x", title=title, actors=[FilmActor(name=name) for name in actors]),
     )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        (TrailerMode.TRAILER, 1),
+        (TrailerMode.PREVIEW, 1),
+        (TrailerMode.ALL, 2),
+    ],
+)
+def test_video_kinds_follows_site_config(mode: TrailerMode, expected: int) -> None:
+    """站点配置决定抓哪种视频: 只预告片 / 只预览片 / 两者."""
+    from amane.config.manager import SiteConfig
+
+    crawler = Data18Crawler(client=HttpClient(web=AsyncMock()), config=SiteConfig(trailer_mode=mode))
+    assert len(crawler._video_kinds()) == expected
 
 
 def _group(gid: str, count: int) -> str:

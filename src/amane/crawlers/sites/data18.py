@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 from parsel import Selector
 
-from ...enums import SiteName
+from ...enums import SiteName, TrailerMode
 from ...net.errors import FailureReason, RequestError
 from ...plugins.models import SourceTrait
 from ..base import Crawler, CrawlerProfile
@@ -213,13 +213,26 @@ class Data18Crawler(Crawler):
                 return None
             raise
 
+    def _video_kinds(self) -> tuple[tuple[str, re.Pattern[str]], ...]:
+        """按站点配置决定抓哪种视频; 默认两者都抓."""
+        mode = self.config.trailer_mode if self.config is not None else TrailerMode.ALL
+        trailer = (_TRAILER_PLAY, _TRAILER_SRC)
+        preview = (_PREVIEW_PLAY, _PREVIEW_SRC)
+        match mode:
+            case TrailerMode.TRAILER:
+                return (trailer,)
+            case TrailerMode.PREVIEW:
+                return (preview,)
+            case _:
+                return (trailer, preview)
+
     async def _videos(self, scene_url: str) -> list[str]:
         """预告片与预览片各自要单独点开播放器才会出现在正文里.
 
         两种视频在不同域上, 路径不能互相推导; 缺哪个就少哪个, 不阻断剧照.
         """
         found: list[str] = []
-        for selector, pattern in ((_TRAILER_PLAY, _TRAILER_SRC), (_PREVIEW_PLAY, _PREVIEW_SRC)):
+        for selector, pattern in self._video_kinds():
             body = await self._render(scene_url, click=selector)
             if body is None:
                 continue

@@ -62,6 +62,14 @@ class BrowserBackendName(StrEnum):
 
 
 # 来源的浏览器使用策略: ALWAYS 一律渲染, OFF 一律直连, AUTO 直连遇挑战后切换.
+class TrailerMode(StrEnum):
+    """来源提供多种视频时的抓取范围: 完整预告片 / 预览片 / 两者."""
+
+    TRAILER = "trailer"
+    PREVIEW = "preview"
+    ALL = "all"
+
+
 class BrowserMode(StrEnum):
     OFF = "off"
     AUTO = "auto"
