@@ -37,6 +37,18 @@ _SSIS_497 = _scene("SSIS-497", title="Sample Title", date="2024-01-01", studio="
 _BLACKED = _scene("blacked:first-anal", title="First Anal", date="2026-03-29", studio="Blacked")
 _BLACKED_SAME_DAY = _scene("blacked:another", title="Another", date="2026-03-29", studio="Blacked")
 _BLACKED_OTHER_STUDIO = _scene("blackedraw:first-anal", title="First Anal", date="2026-03-29", studio="BlackedRaw")
+_MANYVIDS = _scene(
+    "manyvids:purple-bitch:glory-hole",
+    title="Glory Hole for Anime Girlfriend",
+    date="2021-09-21",
+    studio="Manyvids: Purple Bitch",
+)
+_MANYVIDS_HOBBY = _scene(
+    "hobbyporn:purple-bitch:glory-hole",
+    title="Glory Hole For Anime Girlfriend",
+    date="2021-09-24",
+    studio="HobbyPorn: Purple Bitch",
+)
 
 PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] = [
     # kin8 番号带站前缀, TPDB 的 code 是站内 4 位补零 id
@@ -53,6 +65,10 @@ PICK_SCENE_CASES: list[tuple[str, list[dict[str, Any]], dict[str, Any] | None]] 
     # 欧美日期号按片商与发布日期确认: 同日的他厂候选不命中, 只认唯一命中
     ("Blacked.26.03.29", [_BLACKED_OTHER_STUDIO, _BLACKED], _BLACKED),
     ("Blacked.26.03.29", [_BLACKED, _BLACKED_SAME_DAY], None),
+    # 订阅平台的作品名没有番号形态: 条目标题完整出现在入参里即命中, 同名多来源取首条
+    ("Purple Bitch - Glory Hole For Anime Girlfriend", [_MANYVIDS_HOBBY, _MANYVIDS], _MANYVIDS_HOBBY),
+    # 标题不完整 (缺后半段) 时不命中, 避免短标题在无关作品上误配
+    ("Purple Bitch - Glory Hole", [_MANYVIDS], None),
 ]
 
 

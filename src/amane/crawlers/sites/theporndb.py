@@ -1,3 +1,4 @@
+import re
 from typing import TYPE_CHECKING, Any, override
 
 from ...enums import ActorGender, SiteName
@@ -235,6 +236,13 @@ def pick_scene(results: object, number: str) -> dict[str, Any] | None:
         if kin8_id is not None and _is_kin8_scene(scene, code, kin8_id):
             return scene
 
+    # 订阅平台的作品名没有番号形态 (``parse_western_number`` 返回 None): 文件名本身就是
+    # 「厂牌 - 作品名」, 按「条目标题完整出现在入参里」确认. 同名作品的多个来源
+    # (Manyvids / HobbyPorn / FansDB) 会各成一条, 内容相同, 取首条即可.
+    by_title = [scene for scene in scenes if _title_inside(number, scene.get("title"))]
+    if by_title:
+        return by_title[0]
+
     western = parse_western_number(number)
     if western is None:
         return None
@@ -259,6 +267,23 @@ def pick_fingerprint_scene(results: object) -> dict[str, Any] | None:
         if isinstance(scene, dict):
             return scene
     return None
+
+
+def _fold_text(value: str) -> str:
+    """比较用的规范形: 小写, 非字母数字折成单空格."""
+    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _title_inside(number: str, title: object) -> bool:
+    """条目标题完整出现在入参里.
+
+    过短的标题 (如 ``Glory Hole``) 会在无关条目上误命中, 因此设下限; 调用方已按
+    作品名检索, 这里只做确认, 不做模糊匹配.
+    """
+    if not isinstance(title, str):
+        return False
+    wanted = _fold_text(title)
+    return len(wanted) >= 10 and wanted in _fold_text(number)
 
 
 def _as_list(value: object) -> list[object]:
