@@ -7,6 +7,7 @@ import pytest
 
 from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.http import HttpClient
+from amane.crawlers.models import SearchQuery
 from amane.crawlers.sites.generic_official import GenericOfficialCrawler
 from amane.net.errors import FailureKind, RequestError, RequestFailure
 
@@ -23,10 +24,8 @@ def _crawler(route: Callable[[str], str]) -> GenericOfficialCrawler:
     return GenericOfficialCrawler(client=HttpClient(web=web))
 
 
-def _query(urls: list[str]) -> object:
+def _query(urls: list[str]) -> SearchQuery:
     partial = AggregatedMetadata(number="dreddxxx.melody.maks.xmas", title="Melody Marks #2", homepage_urls=urls)
-    from amane.crawlers.models import SearchQuery
-
     return SearchQuery(number="dreddxxx.melody.maks.xmas", partial_result=partial)
 
 
