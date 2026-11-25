@@ -112,10 +112,9 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.JAVDB,
         SiteName.JAVBUS,
     ],
+    # 欧美片不进 JAV 系索引站: 实测这些来源对欧美片连搜索都不命中, 只会白占一次请求.
     ContentType.WESTERN: [
         SiteName.THEPORNDB,
-        SiteName.JAVDB,
-        SiteName.FREEJAVBT,
         SiteName.GAMMA,
         SiteName.DATA18,
         SiteName.OFFICIAL_GENERIC,

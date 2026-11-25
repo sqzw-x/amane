@@ -355,15 +355,16 @@ class TestScrapeHandler:
         assert declared.partials[0].title == "FromDMM"
 
     @pytest.mark.parametrize(
-        ("content_type", "expect_internal"),
+        ("content_type", "expect_internal", "site"),
         [
-            (ContentType.CENSORED, True),
-            (ContentType.WESTERN, False),
+            # 两种类型共用默认路由里的不同来源: 挑一个在该类型路由中的站, 否则引擎找不到可用来源.
+            (ContentType.CENSORED, True, SiteName.JAVDB),
+            (ContentType.WESTERN, False, SiteName.THEPORNDB),
         ],
     )
     @pytest.mark.asyncio(loop_scope="function")
     async def test_materializes_poster_by_content_type(
-        self, repo: Repository, resource_store, content_type: ContentType, expect_internal: bool
+        self, repo: Repository, resource_store, content_type: ContentType, expect_internal: bool, site: SiteName
     ):
         """有 web_client 时, scrape 物化: 仅有码与无码把偏矮的候选裁成内部海报."""
         from typing import ClassVar, cast
@@ -374,7 +375,7 @@ class TestScrapeHandler:
         from amane.net.http import WebClient
 
         class ImgCrawler:
-            name = SiteName.JAVDB
+            name = site
 
             def __init__(self, client=None):
                 pass
@@ -403,7 +404,7 @@ class TestScrapeHandler:
 
         h = ScrapeHandler(
             repo=repo,
-            factory=FakeFactory({"javdb": ImgCrawler()}),
+            factory=FakeFactory({str(site): ImgCrawler()}),
             resource_store=resource_store,
             pipeline_config=HotSettings(),
             web_client=cast("WebClient", FakeWebClient()),
