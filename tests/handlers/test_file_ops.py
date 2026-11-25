@@ -100,6 +100,45 @@ async def test_internal_poster_and_trailer(resource_store: ResourceStore, tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_multi_trailer_writes_into_trailers_dir(resource_store: ResourceStore, tmp_path: Path):
+    """多预告片: 全部落盘到 trailers/ 子目录, 文件名带序号, 不再挤成一个 trailer.mp4.
+
+    Emby 的 trailers 子目录可以放任意多个预告片, 文件名随意; 单文件模式见上一个用例.
+    """
+    from amane.config.manager import ScrapingConfig
+
+    client = cast("WebClient", FakeClient())
+    src = tmp_path / "src" / "MIDV-123.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"movie")
+
+    mf = MediaFile(path=str(src), library_id=1)
+    meta = Metadata(
+        number="MIDV-123",
+        thumb_urls=["https://s/t.jpg"],
+        trailer_urls=["https://s/trailer.mp4", "https://s/preview.mp4"],
+    )
+    paths = _paths(tmp_path / "out")
+
+    result = await execute_file_operations(
+        media_file=mf,
+        metadata=meta,
+        paths=paths,
+        move_mode=MoveMode.COPY,
+        resource_store=resource_store,
+        file_info=parse_file_info(src),
+        web_client=client,
+        config=HotSettings(scraping=ScrapingConfig(multi_trailer=True)),
+    )
+
+    assert result.outcome is PlaceOutcome.PLACED
+    trailers_dir = paths.trailer.parent / "trailers"
+    written = sorted(p.name for p in trailers_dir.glob("*.mp4"))
+    assert written == ["MIDV-123-trailer1.mp4", "MIDV-123-trailer2.mp4"]
+    assert not paths.trailer.exists()  # 单文件位置不再写
+
+
+@pytest.mark.asyncio
 async def test_target_occupied_returns_before_side_effects(resource_store: ResourceStore, tmp_path: Path):
     """目标被占用时立即返回: 不下载图片、不写 NFO、不动磁盘."""
     client = cast("WebClient", FakeClient())

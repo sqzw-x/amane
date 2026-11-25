@@ -49,7 +49,10 @@ _PHOTOSET_TABS = re.compile(
 )
 #: 预告片: 页面点开播放器后由 ``cvs.dt18.com`` 提供, 路径与剧照前缀不同.
 _TRAILER_PLAY = ".playtrailer"
+_PREVIEW_PLAY = ".playpreview"
+#: 预告片与预览片在不同域上; 路径形态也不同, 不能互相推导.
 _TRAILER_SRC = re.compile(r"https://cvs\.dt18\.com/scenes/\d+/\d+/\d+/\d+\.mp4")
+_PREVIEW_SRC = re.compile(r"https://cvm\.dt18\.com/scenes/\d+/\d+/\d+\.mp4")
 #: 场景页里的大图地址: ``media/scenes/<a>/<b>/<key>-<slug>.jpg``.
 _SCENE_KEY = re.compile(r"media/scenes/\d+/\d+/(\d+)-[a-z0-9\-]+\.jpg", re.IGNORECASE)
 #: 图组数量: ``Photoset 15`` / ``Video Stills 32``.
@@ -90,7 +93,12 @@ class Data18Crawler(Crawler):
             name=SiteName.DATA18,
             base_url=_BASE,
             # 剧照与缩略图在 img CDN 上; 列出它们, 站点级代理才会覆盖到这些 host.
-            urls=["https://imb.dt18.com", "https://cdn.dt18.com", "https://cvs.dt18.com"],
+            urls=[
+                "https://imb.dt18.com",
+                "https://cdn.dt18.com",
+                "https://cvs.dt18.com",
+                "https://cvm.dt18.com",
+            ],
             cookies=dict(_COOKIES),
             # 图片 CDN 校验 Referer: 裸请求一律 403, 同源引用即可放行.
             same_origin_referer=True,
@@ -182,11 +190,11 @@ class Data18Crawler(Crawler):
             gallery.extend(f"{prefix}{index:02d}.jpg" for index in range(1, count + 1))
         if not gallery:
             return None
-        trailer = await self._trailer(scene_url)
+        videos = await self._videos(scene_url)
         key_match = _SCENE_KEY.search(first)
         return MediaMetadata(
             number=key_match.group(1) if key_match else "",
-            trailer_urls=[trailer] if trailer else [],
+            trailer_urls=videos,
             extrafanart=list(dict.fromkeys(gallery)),
             source_url=scene_url,
         )
@@ -205,13 +213,20 @@ class Data18Crawler(Crawler):
                 return None
             raise
 
-    async def _trailer(self, scene_url: str) -> str | None:
-        """点开播放器后正文里才有 mp4 地址; 取不到按没有处理, 不阻断剧照."""
-        body = await self._render(scene_url, click=_TRAILER_PLAY)
-        if body is None:
-            return None
-        found = _TRAILER_SRC.search(body)
-        return found.group(0) if found else None
+    async def _videos(self, scene_url: str) -> list[str]:
+        """预告片与预览片各自要单独点开播放器才会出现在正文里.
+
+        两种视频在不同域上, 路径不能互相推导; 缺哪个就少哪个, 不阻断剧照.
+        """
+        found: list[str] = []
+        for selector, pattern in ((_TRAILER_PLAY, _TRAILER_SRC), (_PREVIEW_PLAY, _PREVIEW_SRC)):
+            body = await self._render(scene_url, click=selector)
+            if body is None:
+                continue
+            match = pattern.search(body)
+            if match is not None:
+                found.append(match.group(0))
+        return found
 
     async def _text(self, url: str) -> str | None:
         try:

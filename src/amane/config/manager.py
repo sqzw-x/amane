@@ -376,6 +376,9 @@ class ScrapingConfig(BaseModel):
     crop_poster: bool = True
     """仅有码与无码从封面自动裁切生成海报."""
 
+    multi_trailer: bool = False
+    """多预告片: 启用后所有候选都落盘到 ``trailers/`` 子目录, 而不是只留一个 ``trailer.mp4``."""
+
     poster_ratio: float = Field(default=0.7, ge=0.3, le=1.0)
     """海报裁剪宽高比 (w/h). 从封面右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""
 
