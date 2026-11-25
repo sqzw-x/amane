@@ -526,8 +526,9 @@ class WebClient:
         cookies: dict[str, str] | None = None,
         encoding: str = "utf-8",
         use_proxy: bool = True,
+        timeout: float | None = None,
     ) -> str:
-        resp = await self.request("GET", url, headers=headers, cookies=cookies, use_proxy=use_proxy)
+        resp = await self.request("GET", url, headers=headers, cookies=cookies, use_proxy=use_proxy, timeout=timeout)
         try:
             resp.encoding = encoding
             return resp.text
@@ -592,9 +593,17 @@ class WebClient:
         headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
         use_proxy: bool = True,
+        timeout: float | None = None,
     ) -> Any:
         resp = await self.request(
-            "POST", url, data=data, json=json, headers=headers, cookies=cookies, use_proxy=use_proxy
+            "POST",
+            url,
+            data=data,
+            json=json,
+            headers=headers,
+            cookies=cookies,
+            use_proxy=use_proxy,
+            timeout=timeout,
         )
         try:
             return resp.json()

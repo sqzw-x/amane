@@ -31,12 +31,14 @@ from .javlibrary import JavLibraryCrawler
 from .kin8 import Kin8Crawler
 from .mgstage import MGStageCrawler
 from .official import OfficialCrawler
+from .official_ai import AiOfficialCrawler
 from .prestige import PrestigeCrawler
 from .r18dev import R18DevCrawler
 from .theporndb import ThePornDBCrawler
 from .xcity import XCityCrawler
 
 __all__ = [
+    "AiOfficialCrawler",
     "AiravCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",

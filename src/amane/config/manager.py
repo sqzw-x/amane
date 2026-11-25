@@ -338,6 +338,8 @@ class SiteConfig(BaseModel):
         return None if v is None else _require_browser_engine(v, strict=False)
 
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
+    model: str | None = Field(default=None, json_schema_extra={"x-visible-keys": [SiteName.OFFICIAL_AI]})
+    """该来源调用的模型名; 目前只有 official_ai 用."""
     trailer_mode: TrailerMode = Field(default=TrailerMode.ALL, json_schema_extra={"x-visible-keys": [SiteName.DATA18]})
     """data18 的预告片抓取范围: 只取完整预告片 / 只取预览片 / 两者都取."""
     official_routes: dict[str, Manufacturer] = Field(

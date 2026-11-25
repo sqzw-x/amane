@@ -15,6 +15,7 @@ from .http import HttpClient
 from .models import FetchOptions, FilmActor, MediaMetadata, film_actors
 from .registry import registry
 from .sites import (
+    AiOfficialCrawler,
     AiravCrawler,
     AvbaseCrawler,
     AvsoxCrawler,
@@ -85,6 +86,7 @@ registry.register(PrestigeCrawler)
 registry.register(R18DevCrawler)
 registry.register(ThePornDBCrawler)
 registry.register(OfficialCrawler)
+registry.register(AiOfficialCrawler)
 registry.register(H4610Crawler)
 registry.register(HeyzoCrawler)
 registry.register(C0930Crawler)
@@ -95,6 +97,7 @@ registry.register(H0930Crawler)
 __all__ = [
     "ActorCrawler",
     "ActorMetadata",
+    "AiOfficialCrawler",
     "AiravCrawler",
     "AvbaseActorCrawler",
     "AvbaseCrawler",

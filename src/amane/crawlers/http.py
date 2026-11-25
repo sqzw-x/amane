@@ -107,8 +107,9 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
         encoding: str = "utf-8",
+        timeout: float | None = None,
     ) -> str:
-        return await self._web.get_text(url, headers=headers, cookies=cookies, encoding=encoding)
+        return await self._web.get_text(url, headers=headers, cookies=cookies, encoding=encoding, timeout=timeout)
 
     async def get_html(
         self,
@@ -121,6 +122,7 @@ class HttpClient:
         click: str | None = None,
         click_all: str | None = None,
         scroll: int = 0,
+        timeout: float | None = None,
     ) -> str:
         """取 HTML; ``wait_for`` / ``click`` / ``scroll`` 只在渲染路径生效, 直连时忽略.
 
@@ -137,8 +139,9 @@ class HttpClient:
                 click=click,
                 click_all=click_all,
                 scroll=scroll,
+                timeout=timeout,
             )
-        text = await self.get_text(url, headers=headers, cookies=cookies, encoding=encoding)
+        text = await self.get_text(url, headers=headers, cookies=cookies, encoding=encoding, timeout=timeout)
         reason = classify_block(text)
         if reason is None:
             if wait_for is not None:
@@ -192,8 +195,9 @@ class HttpClient:
         *,
         json: Any,
         headers: dict[str, str] | None = None,
+        timeout: float | None = None,
     ) -> Any:
-        return await self._web.post_json(url, json=json, headers=headers)
+        return await self._web.post_json(url, json=json, headers=headers, timeout=timeout)
 
     async def _render(
         self,
