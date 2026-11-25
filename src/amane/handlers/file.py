@@ -297,8 +297,15 @@ async def _resolve_local(url: str, store: ResourceStore, client: WebClient) -> P
     return await store.acquire(url, client)
 
 
+def _is_playlist(url: str) -> bool:
+    """HLS 播放列表不是视频: 落盘只会得到几百字节的文本, 播放器也打不开."""
+    return url.lower().split("?", 1)[0].endswith(".m3u8")
+
+
 async def _acquire_first_local(urls: list[str], store: ResourceStore, client: WebClient) -> Path | None:
     for url in urls:
+        if _is_playlist(url):
+            continue
         path = await _resolve_local(url, store, client)
         if path:
             return path
@@ -309,6 +316,8 @@ async def _acquire_all_local(urls: list[str], store: ResourceStore, client: WebC
     """按候选顺序取全部可下载的本地文件; 拿不到的跳过, 不阻断其余."""
     found: list[Path] = []
     for url in urls:
+        if _is_playlist(url):
+            continue
         path = await _resolve_local(url, store, client)
         if path:
             found.append(path)

@@ -34,6 +34,9 @@ from ..parsing import extract_all_texts, extract_text
 
 # 站内 id 是 4 位补零序号; 少位或多位都不拼地址.
 _ID = re.compile(r"[0-9]{4}")
+#: ``og:video`` 给的是 HLS 预览流 (hls.heyzo.com/sample/<组>/<号>/mb.m3u8), 播放器直接下不来;
+#: 同样编号的 mp4 在官网 contents 下, 实测所有番号都可下载.
+_HLS = re.compile(r"hls\.heyzo\.com/sample/(?P<group>\d+)/(?P<id>\d+)/")
 _STUDIO = "HEYZO"
 # 缺该头时站点回 404 而不是 403, 因此必须在 profile 里给默认值.
 _ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -107,7 +110,7 @@ def to_metadata(text: str, url: str) -> MediaMetadata | None:
         tags=extract_all_texts(html, _TAG_LINKS),
         plot=_og(text, "og:description") or None,
         thumb_urls=_one(cover),
-        trailer_urls=_one(_og(text, "og:video")),
+        trailer_urls=_one(_trailer(text)),
         extrafanart=_gallery_urls(text, cover),
         source_url=url,
     )
@@ -129,6 +132,14 @@ def _strip_suffix(title: str) -> str:
     """标题统一带 " | HEYZO" 后缀, 去掉后再比对与展示."""
     head, sep, _ = title.rpartition(" | ")
     return (head if sep else title).strip()
+
+
+def _trailer(text: str) -> str:
+    """预告片: 优先同编号的 mp4, 退回 ``og:video`` 原值; 都没有时返回空串."""
+    found = _HLS.search(text)
+    if found is not None:
+        return f"https://www.heyzo.com/contents/{found['group']}/{found['id']}/sample.mp4"
+    return _og(text, "og:video") or ""
 
 
 def _number_from_url(url: str) -> str:
