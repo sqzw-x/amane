@@ -43,8 +43,8 @@ _IMB_LARGE = re.compile(r"https://imb\.dt18\.com/(\d+)/(\d+)/(\d+)/(?P<t>t?)\d+\
 #: 必须逐组渲染才拿得到各自的图片.
 _PHOTOSET_TABS = re.compile(
     r'id="(?P<id>gallery\d+)"[^>]*>'
-    r'(?:(?!id="gallery).)*?'            # 同组内找, 不跨到下一组
-    r'Photoset\s*<b>(?P<count>\d+)</b>',
+    r'(?:(?!id="gallery).)*?'  # 同组内找, 不跨到下一组
+    r"Photoset\s*<b>(?P<count>\d+)</b>",
     re.IGNORECASE | re.DOTALL,
 )
 #: 预告片: 页面点开播放器后由 ``cvs.dt18.com`` 提供, 路径与剧照前缀不同.
