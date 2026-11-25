@@ -28,6 +28,7 @@ _SCENE_FIELDS = """
     tags { name }
     performers { as performer { name gender } }
     images { url }
+    urls { url }
 """
 
 _SEARCH_QUERY = f"""
@@ -215,7 +216,16 @@ class ThePornDBCrawler(Crawler):
             thumb_urls=[thumb_url] if thumb_url else [],
             external_id=scene.get("id") or None,
             source_url=f"https://theporndb.net/scenes/{scene['id']}" if scene.get("id") else None,
+            homepage_urls=_homepage_urls(scene),
         )
+
+
+def _homepage_urls(scene: dict[str, Any]) -> list[str]:
+    """厂商官网链接; 部分条目没有, 交给下游的通用官网源决定是否可用."""
+    urls = scene.get("urls")
+    if not isinstance(urls, list):
+        return []
+    return [url["url"] for url in urls if isinstance(url, dict) and isinstance(url.get("url"), str) and url["url"]]
 
 
 def pick_scene(results: object, number: str) -> dict[str, Any] | None:

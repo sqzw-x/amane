@@ -74,6 +74,8 @@ class MediaMetadata(BaseModel):
     score: float | None = None
     external_id: str | None = None
     source_url: str | None = None
+    #: 来源提供的厂商官网链接 (TPDB 的 scene.urls); 供通用官网源二次抓取.
+    homepage_urls: list[str] = Field(default_factory=list)
     directors: list[str] = Field(default_factory=list)
     extrafanart: list[str] = Field(default_factory=list)
 

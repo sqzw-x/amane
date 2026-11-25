@@ -18,6 +18,7 @@ from .fc2club import FC2ClubCrawler
 from .fc2ppvdb import FC2PPVDBCrawler
 from .freejavbt import FreejavbtCrawler
 from .gamma import GammaCrawler
+from .generic_official import GenericOfficialCrawler
 from .getchu import GetchuCrawler
 from .giga import GigaCrawler
 from .h4610 import C0930Crawler, H0930Crawler, H4610Crawler
@@ -51,6 +52,7 @@ __all__ = [
     "FalenoCrawler",
     "FreejavbtCrawler",
     "GammaCrawler",
+    "GenericOfficialCrawler",
     "GetchuCrawler",
     "GigaCrawler",
     "H0930Crawler",

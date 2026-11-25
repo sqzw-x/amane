@@ -36,6 +36,7 @@ class SiteName(StrEnum):
     MINNANO = "minnano"
     MURAMURA = "muramura"
     OFFICIAL = "official"
+    OFFICIAL_GENERIC = "official_generic"
     PACOPACOMAMA = "pacopacomama"
     PRESTIGE = "prestige"
     R18DEV = "r18dev"

@@ -36,6 +36,8 @@ class AggregatedMetadata:
 
     external_ids: dict[str, str] = field(default_factory=dict)
     source_urls: dict[str, str] = field(default_factory=dict)
+    #: 厂商官网链接 (来源给的, 未抓取); 通用官网源据此二次抓取.
+    homepage_urls: list[str] = field(default_factory=list)
     field_sources: dict[str, str] = field(default_factory=dict)
 
 

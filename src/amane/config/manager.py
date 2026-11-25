@@ -118,6 +118,7 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.FREEJAVBT,
         SiteName.GAMMA,
         SiteName.DATA18,
+        SiteName.OFFICIAL_GENERIC,
     ],
     ContentType.HENTAI: [
         SiteName.GETCHU,

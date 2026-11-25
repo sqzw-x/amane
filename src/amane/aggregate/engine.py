@@ -210,6 +210,13 @@ async def execute_graph(
         partial = copy.deepcopy(state.result)
         # 段间图片地址只装配第一段节点: 第二段贡献尚未取得, 它在链上的位置也无从预知.
         _assemble_url_fields(graph, state.fetched, partial, cache_keys={node.cache_key for node in first})
+        # 官网链接也要在段间传下去: 第二段的通用官网源靠它才知道抓哪里.
+        for data in state.fetched.values():
+            if data is None:
+                continue
+            for url in data.homepage_urls:
+                if url not in partial.homepage_urls:
+                    partial.homepage_urls.append(url)
         await _fetch_phase(state, second, query, crawlers, snapshots, partial)
         _resolve_scalars(graph, state)
         await _report_progress(on_progress, state, second, field_total)
@@ -473,6 +480,9 @@ def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None
             state.result.external_ids[ck] = data.external_id
         if data.source_url and ck not in state.result.source_urls:
             state.result.source_urls[ck] = data.source_url
+        for url in data.homepage_urls:
+            if url not in state.result.homepage_urls:
+                state.result.homepage_urls.append(url)
 
 
 def _normalize_source_text(meta: MediaMetadata) -> MediaMetadata:
