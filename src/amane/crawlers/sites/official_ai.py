@@ -68,7 +68,7 @@ class AiOfficialCrawler(Crawler):
         return CrawlerProfile(
             name=SiteName.OFFICIAL_AI,
             base_url="",
-            traits=frozenset({SourceTrait.NEEDS_PARTIAL}),
+            traits=frozenset({SourceTrait.NEEDS_PARTIAL, SourceTrait.LAST_RESORT}),
         )
 
     @override

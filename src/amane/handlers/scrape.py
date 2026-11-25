@@ -57,6 +57,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         self._multi_language_sources = frozenset(d.id for d in catalog if SourceTrait.MULTI_LANGUAGE in d.traits)
         self._partial_sources = frozenset(d.id for d in catalog if SourceTrait.NEEDS_PARTIAL in d.traits)
         self._file_hash_sources = frozenset(d.id for d in catalog if SourceTrait.USES_FILE_HASH in d.traits)
+        self._last_resort_sources = frozenset(d.id for d in catalog if SourceTrait.LAST_RESORT in d.traits)
 
     async def handle(self, payload: ScrapePayload) -> TaskResult[ScrapeResult]:
         bind_contextvars(number=payload.number)
@@ -121,6 +122,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             on_progress=_on_fetch_progress,
             multi_lang_sites=self._multi_language_sources,
             deferred_sites=frozenset(name for name in crawlers if name in self._partial_sources),
+            last_resort_sites=frozenset(name for name in crawlers if name in self._last_resort_sources),
         )
 
         # 站点结果已由引擎 _fetch_one 逐条上报到 summary.outcomes; 这里只记录调度顺序.

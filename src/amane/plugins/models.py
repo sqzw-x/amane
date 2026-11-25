@@ -68,6 +68,9 @@ class SourceTrait(StrEnum):
     MULTI_LANGUAGE = "multi_language"
     # 刮削前按需计算 oshash, 经 ``SearchQuery.file_hash`` 传入.
     USES_FILE_HASH = "uses_file_hash"
+    # 最后手段: 只有同次刮削里前面的来源全部没结果时才调用. 用于成本高或成功率不稳的来源
+    # (例如要调模型的官网推断), 避免每次刮削都触发.
+    LAST_RESORT = "last_resort"
 
 
 class SourceDescriptor(BaseModel):

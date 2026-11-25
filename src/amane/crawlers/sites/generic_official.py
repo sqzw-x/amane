@@ -34,6 +34,10 @@ _MAX_URLS = 3
 _TEASER = re.compile(r"https?://[^\"'\s\\]+/(?P<name>[^/\"']*teaser[^/\"']*)\.mp4", re.IGNORECASE)
 #: 官网常见的发布日期写法; JSON-LD 与 meta 都可能给.
 _DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+#: 数据库与镜像站: 上游把它们的条目页当作"官网链接"给出, 但内容与索引站重复, 读它没有增量.
+_MIRROR_HOSTS = frozenset(
+    {"fansdb.cc", "theporndb.net", "iafd.com", "adultfilmdatabase.com", "data18.com", "javdb.com"}
+)
 
 
 def _json_ld(selector: Selector) -> dict[str, Any]:
@@ -107,6 +111,8 @@ class GenericOfficialCrawler(Crawler):
         if partial is None:
             return None
         for url in partial.homepage_urls[:_MAX_URLS]:
+            if _is_mirror(url):
+                continue
             try:
                 meta = await self._extract(url, partial.number)
             except RequestError as exc:
@@ -156,6 +162,13 @@ class GenericOfficialCrawler(Crawler):
 
     async def _scrape(self, url: str, options: FetchOptions | None = None) -> MediaMetadata | None:
         return None
+
+
+def _is_mirror(url: str) -> bool:
+    """镜像站不是官网: 读它拿不到索引站之外的东西, 不该算作这条链路的命中."""
+    host = url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+    parts = host.split(".")
+    return ".".join(parts[-2:]) in _MIRROR_HOSTS if len(parts) >= 2 else host in _MIRROR_HOSTS
 
 
 def _text_of(value: object) -> str | None:
