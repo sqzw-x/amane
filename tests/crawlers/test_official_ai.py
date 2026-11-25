@@ -10,7 +10,14 @@ from amane.aggregate.models import AggregatedMetadata
 from amane.config.manager import SiteConfig
 from amane.crawlers.http import HttpClient
 from amane.crawlers.models import SearchQuery
-from amane.crawlers.sites.official_ai import AiOfficialCrawler, _clean_studio, _parse_domains, _registrable
+from amane.crawlers.sites.official_ai import (
+    AiOfficialCrawler,
+    _clean_studio,
+    _parse_domains,
+    _registrable,
+    _search_terms,
+    _title_ratio,
+)
 from amane.net.errors import FailureKind, RequestError, RequestFailure
 
 URL = "https://example.com/"
@@ -123,3 +130,31 @@ def test_platform_domains_filtered_from_candidates() -> None:
     urls = crawler._candidate_urls(["onlyfans.com", "dreddxxx.com"])
     assert all("onlyfans.com" not in url for url in urls)
     assert any("dreddxxx.com" in url for url in urls)
+
+
+@pytest.mark.parametrize(
+    ("label", "title", "expected"),
+    [
+        # 虚词不参与搜索, 否则站内命中一堆无关结果.
+        ("去虚词", "Melody Marks 2 Full Romp", "melody marks 2"),
+        ("截断", "One Two Three Four Five Six", "one two three"),
+        ("标点转空格", "Lana-Gee & Alana Rose", "lana gee alana"),
+    ],
+)
+def test_search_terms(label: str, title: str, expected: str) -> None:
+    assert _search_terms(title) == expected, label
+
+
+@pytest.mark.parametrize(
+    ("label", "db_title", "site_title", "expected"),
+    [
+        # 官网标题常是数据库标题的前缀, 这种情况必须给满分.
+        ("前缀", "Melody Marks 2 Full Romp", "Melody Marks #2 - The Official Dredd XXX", 1.0),
+        # 一个标题是另一个的前缀时算满分.
+        ("前缀扩展", "Melody Marks 2", "Melody Marks 2 Full Romp", 1.0),
+        # 同系列不同集不能互相当成命中.
+        ("不同集", "Melody Marks 2 Full Romp", "Chloe Amour #2", 0.0),
+    ],
+)
+def test_title_ratio(label: str, db_title: str, site_title: str, expected: float) -> None:
+    assert _title_ratio(db_title, site_title) == expected, label
