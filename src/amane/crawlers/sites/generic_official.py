@@ -41,7 +41,7 @@ def _json_ld(selector: Selector) -> dict[str, Any]:
     for raw in selector.xpath('//script[@type="application/ld+json"]/text()').getall():
         try:
             data = json.loads(raw)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
         for candidate in data if isinstance(data, list) else [data]:
             if isinstance(candidate, dict):
