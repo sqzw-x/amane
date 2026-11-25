@@ -10,6 +10,7 @@ from .d2pass import (
     TenMusumeCrawler,
 )
 from .dahlia import DahliaCrawler
+from .data18 import Data18Crawler
 from .dmm import DmmCrawler
 from .faleno import FalenoCrawler
 from .fc2 import FC2Crawler
@@ -42,6 +43,7 @@ __all__ = [
     "CaribbeanComCrawler",
     "D2PassCrawler",
     "DahliaCrawler",
+    "Data18Crawler",
     "DmmCrawler",
     "FC2ClubCrawler",
     "FC2Crawler",

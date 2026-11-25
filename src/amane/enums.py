@@ -12,6 +12,7 @@ class SiteName(StrEnum):
     C0930 = "c0930"
     CARIBBEANCOM = "caribbeancom"
     DAHLIA = "dahlia"
+    DATA18 = "data18"
     DMM = "dmm"
     FALENO = "faleno"
     FC2 = "fc2"

@@ -21,6 +21,7 @@ from .sites import (
     C0930Crawler,
     CaribbeanComCrawler,
     DahliaCrawler,
+    Data18Crawler,
     DmmCrawler,
     FalenoCrawler,
     FC2ClubCrawler,
@@ -69,6 +70,7 @@ registry.register(MuramuraCrawler)
 registry.register(AvbaseCrawler)
 registry.register(XCityCrawler)
 registry.register(DahliaCrawler)
+registry.register(Data18Crawler)
 registry.register(FalenoCrawler)
 registry.register(GigaCrawler)
 registry.register(Kin8Crawler)
@@ -99,6 +101,7 @@ __all__ = [
     "CaribbeanComCrawler",
     "Crawler",
     "DahliaCrawler",
+    "Data18Crawler",
     "DmmCrawler",
     "FC2ClubCrawler",
     "FC2Crawler",
