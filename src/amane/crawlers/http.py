@@ -118,19 +118,31 @@ class HttpClient:
         cookies: dict[str, str] | None = None,
         encoding: str = "utf-8",
         wait_for: str | None = None,
+        click: str | None = None,
+        scroll: int = 0,
     ) -> str:
-        """取 HTML; ``wait_for`` 只在渲染路径生效 (等元素可见), 直连时忽略."""
+        """取 HTML; ``wait_for`` / ``click`` / ``scroll`` 只在渲染路径生效, 直连时忽略.
+
+        ``click`` 与 ``scroll`` 用于正文由前端生成的页面: 渲染后先点一次选择器, 再滚动若干屏,
+        最后读取正文. 失败不抛错, 调用方按拿到的正文判断.
+        """
         scope = self._scope(url)
         if self._policy.should_render(scope):
-            return await self._render(url, headers=headers, cookies=cookies, wait_for=wait_for)
+            return await self._render(
+                url, headers=headers, cookies=cookies, wait_for=wait_for, click=click, scroll=scroll
+            )
         text = await self.get_text(url, headers=headers, cookies=cookies, encoding=encoding)
         reason = classify_block(text)
         if reason is None:
             if wait_for is not None:
                 logger.debug("wait_for ignored on direct response", url=url, selector=wait_for)
+            if click is not None or scroll:
+                logger.debug("click/scroll ignored on direct response", url=url)
             return text
         if self._policy.escalate(scope, reason):
-            return await self._render(url, headers=headers, cookies=cookies, wait_for=wait_for)
+            return await self._render(
+                url, headers=headers, cookies=cookies, wait_for=wait_for, click=click, scroll=scroll
+            )
         raise SourceError(reason, detail=url)
 
     async def post_html(
@@ -179,6 +191,8 @@ class HttpClient:
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle: bool = True,
+        click: str | None = None,
+        scroll: int = 0,
     ) -> str:
         # 未配置后端或获取失败抛 RequestError; 拦截页抛 SourceError.
         if self._browser is None:
@@ -194,6 +208,8 @@ class HttpClient:
             timeout=timeout if timeout is not None else self._browser_timeout,
             # 有选择器时它就是就绪信号; 没有才退回到有上限的网络静默. 探测不必等静默.
             network_idle_timeout=None if wait_for is not None or not network_idle else _NETWORK_IDLE_TIMEOUT_MS,
+            click=click,
+            scroll=scroll,
         )
         if html is None:
             raise RequestError(

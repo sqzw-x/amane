@@ -424,7 +424,11 @@ class ScrapingConfig(BaseModel):
     )
 
     site_config: dict[str, SiteConfig] = Field(
-        default_factory=lambda: {str(site): SiteConfig() for site in SiteName},
+        # data18 的年龄门不会被识别成 Cloudflare 挑战, 直连只会拿到确认页, 因此默认走渲染.
+        default_factory=lambda: {
+            str(site): SiteConfig(use_browser=BrowserMode.ALWAYS if site is SiteName.DATA18 else BrowserMode.AUTO)
+            for site in SiteName
+        },
         json_schema_extra={"x-frozen-keys": True},
     )
     """含影片站与演员站."""

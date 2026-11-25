@@ -16,10 +16,12 @@ MOVIE_PAGE = """<html><head><title>Movie</title></head><body>
 
 
 def _scene_page(actress: str, photoset: int = 15) -> str:
+    """渲染后才会出现的剧照地址; 前缀与文件名形态都因场景而异, 这里用真实形态."""
     return f"""<html><head><title>{actress} in Omg! I Fucked My Bratty Student 2 | DATA18</title></head>
 <body>
 <img src="https://cdn.dt18.com/media/scenes/3/5/120556-melody-marks-omg-i-fucked.jpg">
 <span>Photoset <b>{photoset}</b></span>
+<img data-src="https://imb.dt18.com/314/128/120556/t01.jpg">
 </body></html>"""
 
 
