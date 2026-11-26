@@ -7,13 +7,16 @@
     <string name="setup_server_label">服务器地址</string>
     <string name="setup_server_hint">192.168.1.10:8000</string>
     <string name="setup_token_label">API Token</string>
+    <string name="setup_add">添加服务器</string>
     <string name="setup_connect">连接</string>
     <string name="setup_saved">已保存的服务器</string>
+    <string name="setup_empty">还没有服务器</string>
     <string name="setup_swipe_hint">左滑条目可编辑或删除</string>
     <string name="setup_edit">编辑</string>
     <string name="setup_remove">删除</string>
     <string name="setup_active">当前</string>
     <string name="setup_edit_title">编辑服务器</string>
+    <string name="setup_add_title">添加服务器</string>
     <string name="setup_save">保存</string>
     <string name="setup_cancel">取消</string>
     <string name="setup_remove_confirm">删除 %1$s?</string>
