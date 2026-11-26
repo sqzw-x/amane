@@ -751,3 +751,13 @@ class TestBskBackendAvailability:
 
         with pytest.raises(ValidationError, match="未找到 bsk CLI"):
             BrowserConfig(bsk_path=str(tmp_path / "absent"), backend=BrowserBackendName.BSK)
+
+
+def test_mgstage_precedes_dmm_for_censored():
+    """プレステージ 的独占特典只在 mgstage 有, dmm 是通常版, 因此前者排在路由更前."""
+    from amane.config.manager import _DEFAULT_CONTENT_ROUTES
+    from amane.enums import SiteName
+    from amane.parsing import ContentType
+
+    route = [str(site) for site in _DEFAULT_CONTENT_ROUTES[ContentType.CENSORED]]
+    assert route.index(str(SiteName.MGSTAGE)) < route.index(str(SiteName.DMM))

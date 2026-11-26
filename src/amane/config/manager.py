@@ -72,7 +72,10 @@ def _languages_schema(schema: dict[str, Any]) -> None:
 
 #: 各内容类型默认有序路由 (资格真值 + 该类型默认字段优先级).
 _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
+    # mgstage 排在 dmm 之前: プレステージ 的独占特典只在该站有, 同片在 dmm 上是通常版
+    # (标题缺少特典标记, 时长短 15-30 分钟). 非该厂牌的片在 mgstage 未收录, 自然落到 dmm.
     ContentType.CENSORED: [
+        SiteName.MGSTAGE,
         SiteName.DMM,
         SiteName.JAVDB,
         SiteName.JAVBUS,
