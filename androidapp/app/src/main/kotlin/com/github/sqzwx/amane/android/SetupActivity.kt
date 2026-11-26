@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.webkit.CookieManager
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -13,7 +14,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.github.sqzwx.amane.android.databinding.ActivitySetupBinding
-import com.github.sqzwx.amane.android.databinding.DialogServerEditBinding
+import com.github.sqzwx.amane.android.databinding.DialogServerFormBinding
 import com.github.sqzwx.amane.android.databinding.RowServerBinding
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -26,6 +27,8 @@ import kotlin.math.abs
  *
  * 这里填的 token 只用于向 `/api/system/desktop` 换取服务端下发的 cookie, 之后登录态由 WebView 自己的
  * cookie 罐维持 (见 docs/dev/android.md 的登录一节); 留空直接连接也成立, 那时由 SPA 的登录门接管.
+ *
+ * 页面只有一个「添加服务器」按钮: 表单放在弹窗里, 与编辑共用同一个 ([showForm]), 列表本身因此占满整屏.
  */
 class SetupActivity : AppCompatActivity() {
 
@@ -44,33 +47,79 @@ class SetupActivity : AppCompatActivity() {
         applyWindowInsets()
 
         binding.version.text = getString(R.string.setup_version, BuildConfig.VERSION_NAME)
-        binding.connect.setOnClickListener { connect() }
-        // 表单预填当前服务器: token 已随条目保存, cookie 过期后不必再查服务端日志.
-        val active = store.activeServer()
-        binding.nameInput.setText(active?.name.orEmpty())
-        binding.serverInput.setText(active?.url.orEmpty())
-        binding.tokenInput.setText(active?.token.orEmpty())
+        binding.addServer.setOnClickListener { showForm(null) }
         renderServers()
     }
 
-    private fun connect() {
-        val url = normalizeServerUrl(binding.serverInput.text.toString())
+    /**
+     * 打开服务器表单; `server` 为空时是添加.
+     *
+     * 添加要连上服务器才算完成, 因此先探活再保存 (它同时也是换取 cookie 的那一次请求); 编辑只落盘, 地址或
+     * token 有改动时在后台补一次探活, 失败只提示 — 编辑结果已经保存, 不因一次探活失败而回退.
+     */
+    private fun showForm(server: SavedServer?) {
+        val form = DialogServerFormBinding.inflate(layoutInflater)
+        form.formName.setText(server?.name.orEmpty())
+        form.formServer.setText(server?.url.orEmpty())
+        form.formToken.setText(server?.token.orEmpty())
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (server == null) R.string.setup_add_title else R.string.setup_edit_title)
+            .setView(form.root)
+            .setNegativeButton(R.string.setup_cancel, null)
+            .setPositiveButton(
+                if (server == null) R.string.setup_connect else R.string.setup_save,
+                null,
+            )
+            .create()
+        // 正面按钮自行接管: 默认实现点击后立即关闭弹窗, 地址写错或连不上时输入与报错一起消失, 只能重新填写.
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (server == null) submitNew(dialog, form) else submitEdit(dialog, form, server)
+            }
+        }
+        dialog.show()
+    }
+
+    /** 添加: 探活通过才保存并打开; 失败把原因留在弹窗里. */
+    private fun submitNew(dialog: AlertDialog, form: DialogServerFormBinding) {
+        val url = normalizeServerUrl(form.formServer.text.toString())
         if (url == null) {
-            showError(getString(R.string.error_invalid_url))
+            showFormError(form, getString(R.string.error_invalid_url))
             return
         }
-        val token = binding.tokenInput.text.toString().trim()
-        val name = binding.nameInput.text.toString().trim().ifEmpty { defaultServerName(url) }
-        binding.error.visibility = View.GONE
-        setBusy(true)
+        val token = form.formToken.text.toString().trim()
+        val name = form.formName.text.toString().trim().ifEmpty { defaultServerName(url) }
+        hideFormError(form)
+        setFormBusy(dialog, form, true)
         // 探活是阻塞 IO; 为一次请求引入协程依赖不值得.
         thread {
             val failure = probe(url, token)
             runOnUiThread {
-                setBusy(false)
-                if (failure == null) open(SavedServer(name, url, token)) else showError(failure)
+                if (isDestroyed) return@runOnUiThread
+                setFormBusy(dialog, form, false)
+                if (failure == null) {
+                    dialog.dismiss()
+                    open(SavedServer(name, url, token))
+                } else {
+                    showFormError(form, failure)
+                }
             }
         }
+    }
+
+    /** 编辑: 只校验地址格式, 保存后按需在后台补探活. */
+    private fun submitEdit(dialog: AlertDialog, form: DialogServerFormBinding, server: SavedServer) {
+        val url = normalizeServerUrl(form.formServer.text.toString())
+        if (url == null) {
+            showFormError(form, getString(R.string.error_invalid_url))
+            return
+        }
+        val token = form.formToken.text.toString().trim()
+        val name = form.formName.text.toString().trim().ifEmpty { defaultServerName(url) }
+        store.update(server.url, SavedServer(name, url, token))
+        dialog.dismiss()
+        renderServers()
+        if (url != server.url || token != server.token) refreshSession(url, token)
     }
 
     /** 返回 null 表示可以打开: 服务器可达 (且 token 可用, 或本来就不需要 token). */
@@ -124,6 +173,7 @@ class SetupActivity : AppCompatActivity() {
     private fun renderServers() {
         val servers = store.list()
         binding.savedGroup.visibility = if (servers.isEmpty()) View.GONE else View.VISIBLE
+        binding.savedEmpty.visibility = if (servers.isEmpty()) View.VISIBLE else View.GONE
         binding.savedList.removeAllViews()
         revealedCard = null
         val activeUrl = store.active()
@@ -138,7 +188,7 @@ class SetupActivity : AppCompatActivity() {
             }
             row.serverEdit.setOnClickListener {
                 closeReveal()
-                showEditDialog(server)
+                showForm(server)
             }
             row.serverRemove.setOnClickListener {
                 closeReveal()
@@ -238,42 +288,6 @@ class SetupActivity : AppCompatActivity() {
         card.animate().translationX(if (open) -width else 0f).setDuration(ANIMATION_MS).start()
     }
 
-    private fun showEditDialog(server: SavedServer) {
-        val form = DialogServerEditBinding.inflate(layoutInflater)
-        form.editName.setText(server.name)
-        form.editServer.setText(server.url)
-        form.editToken.setText(server.token)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.setup_edit_title)
-            .setView(form.root)
-            .setNegativeButton(R.string.setup_cancel, null)
-            .setPositiveButton(R.string.setup_save, null)
-            .create()
-        // 正面按钮自行接管: 默认实现点击后立即关闭弹窗, 地址写错时输入与报错一起消失, 只能重新点击「编辑」.
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (saveEdited(server, form)) dialog.dismiss()
-            }
-        }
-        dialog.show()
-    }
-
-    /** 返回是否保存成功; 地址非法时把错误留在弹窗里, 不关闭. */
-    private fun saveEdited(server: SavedServer, form: DialogServerEditBinding): Boolean {
-        val url = normalizeServerUrl(form.editServer.text.toString())
-        if (url == null) {
-            form.editError.text = getString(R.string.error_invalid_url)
-            form.editError.visibility = View.VISIBLE
-            return false
-        }
-        val token = form.editToken.text.toString().trim()
-        val name = form.editName.text.toString().trim().ifEmpty { defaultServerName(url) }
-        store.update(server.url, SavedServer(name, url, token))
-        renderServers()
-        if (url != server.url || token != server.token) refreshSession(url, token)
-        return true
-    }
-
     /**
      * 地址或 token 改过就重新换取 cookie: 新 origin 上还没有会话, 旧 cookie 也不再对应当前配置.
      * 在后台进行, 失败只提示 — 编辑结果已经保存, 不因一次探活失败而回退.
@@ -282,7 +296,9 @@ class SetupActivity : AppCompatActivity() {
         if (token.isEmpty()) return
         thread {
             val failure = probe(url, token) ?: return@thread
-            runOnUiThread { showError(failure) }
+            runOnUiThread {
+                if (!isDestroyed) Toast.makeText(this, failure, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -297,17 +313,31 @@ class SetupActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun setBusy(busy: Boolean) {
-        binding.connect.isEnabled = !busy
-        binding.progress.visibility = if (busy) View.VISIBLE else View.GONE
+    /**
+     * 探活期间的忙碌态: 输入与两个按钮一起锁住.
+     *
+     * 正面按钮是自定义点击监听, 不会随弹窗默认的自动关闭而失效, 因此必须在这里显式禁用 — 否则连点会重复发请求,
+     * 晚到的那次失败还会盖掉已经打开的新页面.
+     */
+    private fun setFormBusy(dialog: AlertDialog, form: DialogServerFormBinding, busy: Boolean) {
+        form.formProgress.visibility = if (busy) View.VISIBLE else View.GONE
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = !busy
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isEnabled = !busy
+        form.formServer.isEnabled = !busy
+        form.formToken.isEnabled = !busy
+        form.formName.isEnabled = !busy
     }
 
-    private fun showError(message: String) {
-        binding.error.text = message
-        binding.error.visibility = View.VISIBLE
+    private fun showFormError(form: DialogServerFormBinding, message: String) {
+        form.formError.text = message
+        form.formError.visibility = View.VISIBLE
     }
 
-    /** 与 [BrowserActivity] 同一套 inset 处理: padding 施加在滚动容器上, 内容因此不会进入状态栏与导航条区域. */
+    private fun hideFormError(form: DialogServerFormBinding) {
+        form.formError.visibility = View.GONE
+    }
+
+    /** 与 [BrowserActivity] 同一套 inset 处理: padding 施加在根容器上, 内容因此不会进入状态栏与导航条区域. */
     private fun applyWindowInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(

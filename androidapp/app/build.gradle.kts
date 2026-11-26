@@ -60,6 +60,12 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
+        debug {
+            // debug 是另一个包名 (见 docs/dev/android.md): 与正式包可同时安装, 各自持有服务器列表与 cookie 罐,
+            // 因此不能与正式包比 versionCode 高低; 版本串带后缀, 界面上先分清装的是哪一个.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
     }
 
     buildFeatures {

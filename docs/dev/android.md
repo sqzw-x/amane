@@ -18,13 +18,17 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 
 ## 登录
 
-首次连接的 token 只在 `SetupActivity` 里向 `/api/system/desktop` 发一次 Bearer 请求, 中间件随之下发 `amane_token` cookie; 壳把响应头里的 `Set-Cookie` 手工写入 `CookieManager` (原生请求的响应头 WebView 不可见), 之后一切与浏览器一致. token 随服务器条目一起存放在应用私有存储里, 明文可改 — 同一份存储里本就是原文, 掩码不构成保护; 登录态仍然只是 WebView 的 cookie 罐, 打开页面不会自动重发 token, cookie 失效由 SPA 自己的登录门接管.
+token 只在 `SetupActivity` 里向 `/api/system/desktop` 发一次 Bearer 请求, 中间件随之下发 `amane_token` cookie; 壳把响应头里的 `Set-Cookie` 手工写入 `CookieManager` (原生请求的响应头 WebView 不可见), 之后一切与浏览器一致. token 随服务器条目一起存放在应用私有存储里, 明文可改 — 同一份存储里本就是原文, 掩码不构成保护; 登录态仍然只是 WebView 的 cookie 罐, 打开页面不会自动重发 token, cookie 失效由 SPA 自己的登录门接管.
+
+这一次换取 cookie 的时机是**用户提交表单**, 不是启动: 探活通过才保存并打开服务器, 因此进入本页不会发出任何请求. 编辑已保存条目只在地址或 token 有改动时于后台补一次换取, 失败只提示.
 
 **壳内不显示页面的登录门**: 页面无从区分「服务端换了 token」与「地址填错」, 而 token 的正确入口是服务器页 (它校验 Bearer 并换取 cookie). 入口处发现未认证 (挂载探活失败, 或任何请求 401 触发失效事件) 时跳回 `SetupActivity` 一次 — 每次页面加载只跳一次, 用户从那里返回后落在登录门, 门内另给一条「服务器设置」入口. 服务端关闭鉴权 (`AMANE_TOKEN=off`) 或用户留空 token 时, 探活返回 401 也直接打开页面.
 
 ## 服务器列表
 
-条目是卡片: 第一行名字 (留空时取主机名与端口), 第二行地址, 当前服务器带「当前」标记; 点击卡片直接打开, 卡片左滑露出「编辑」与「删除」, 同一时刻只展开一行. 编辑弹窗改名字、地址与 token, 地址或 token 有改动时用新值在后台重新换取 cookie — 失败只提示, 编辑结果已经保存.
+页面只有列表与一个「添加服务器」按钮, 表单在弹窗里: 添加与编辑共用同一个表单, 由传入的条目是否为空区分 — 表单不再常驻页面顶部, 也不再预填当前服务器的信息, 当前条目本来就可在列表里逐条编辑.
+
+条目是卡片: 第一行名字 (留空时取主机名与端口), 第二行地址, 当前服务器带「当前」标记; 点击卡片直接打开, 卡片左滑露出「编辑」与「删除」, 同一时刻只展开一行.
 
 - 左滑是物理方向, 不随 RTL 镜像: 壳只有中英两套文案, 而操作区的 `layout_gravity="end"` 在 RTL 下会贴到左边, 操作区再也滑不出来, 因此条目容器固定 `layoutDirection="ltr"`.
 - 纵向手势由外层 ScrollView 接管, 框架随之补发 `ACTION_CANCEL`; 那一次不是点击, 只做复位 — 否则用户滚动列表就会打开服务器, 会话随之切换.
@@ -45,7 +49,7 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 ## 平台功能
 
 - **主文档加载失败**: 显示原生错误页 (重试 / 换服务器), 不使用 WebView 自带的错误页 — 局域网服务器关机会经常遇到.
-- **下拉刷新**: `SwipeRefreshLayout` 包住 WebView, 松开即 `reload()`, 加载结束或失败时收起指示器, 全屏播放期间禁用. 接管需同时满足两条, 缺一都会误触: 触点处已无法向上滚动 — `SwipeRefreshLayout` 只依据 WebView 自身的滚动位置, 而 SPA 的滚动多在内部容器里 (那里恒为 0), 该判据因此由页面在 `touchstart` 实测并经桥推送至壳 (`web/src/lib/pull-refresh.ts`); 纵向位移压过横向 — 基类只比较纵位移是否越过 touchSlop, 横向滑动伴随的纵向偏移会被当成下拉, 方向改由 `AxisLockSwipeRefreshLayout` 在手势起手处判定.
+- **下拉刷新**: `SwipeRefreshLayout` 包住 WebView, 松开即 `reload()`, 加载结束或失败时收起指示器, 全屏播放期间禁用. 接管条件全部由 `AxisLockSwipeRefreshLayout` 判定, 缺一都会误触: 触点处已无法向上滚动 — `SwipeRefreshLayout` 只依据 WebView 自身的滚动位置, 而 SPA 的滚动多在内部容器里 (那里恒为 0), 该判据因此由页面在 `touchstart` 实测并经桥推送至壳 (`web/src/lib/pull-refresh.ts`); 纵向位移压过横向; 且只认按下时的那根手指. 基类的两处做法会绕过上面任何一条, 因此它既不自行决定能否接管, 也不自己记起点: 它在 `ACTION_DOWN` 上就问能否接管, 答"还能向上滚"时连起点都不记 (沿用上一次被接受的位置), 而页面推来的判据是异步的 — 按下那一刻读到的是上一段手势的结论; 多指时它只换 `activePointer` 而不重设起点, 纵坐标跳到另一根手指的位置. 解法是接管前喂给基类的事件一律把坐标钉在被跟踪手指的按下位置 (它的起点随之落在按下处, 位移恒为 0), 接管后才放行真实坐标; 接管之后屏蔽多指, 被跟踪的手指一离场就地结算.
 - **文件选择**: WebView 自身不实现文件选择器, `<input type="file">` 必须由系统选择器接管.
 - **下载**: `Content-Disposition: attachment` 交给 `DownloadManager`; 它在独立进程, 不共享 cookie 罐, 因此显式写入 `Cookie` 请求头. 附件型 `window.open` 同样交给它, 真页面才另起 `PopupActivity`.
 - **全屏视频**: `onShowCustomView` 的自定义视图 (`<video>` 与页面自己的 Fullscreen API 都经由这条路径), 同时收起系统栏并把方向锁到传感器横屏, 期间根容器的 inset 内边距归零; 返回键先请求页面退出全屏, 超时未退出则按原生方式收起; 全屏期间按 Home 键切换为画中画.
@@ -67,6 +71,8 @@ Android 端是**远程客户端**: 服务端 (FastAPI + SQLite + 运行期加载
 ## 打包与分发
 
 **APP 版本独立于服务端与桌面端**: 唯一来源是 `androidapp/version.txt`, 构建脚本与 Gradle 都读取它, `versionName` 与 `versionCode` 由 semver 推导; `versionCode` 必须随版本单调递增 — Android 拒绝降级覆盖安装. 签名密钥由 CI 从仓库 secret 写入 `androidapp/keystore.properties` (不入库), 只此一份且必须在仓库外备份: 密钥缺失、更换或退回 debug 密钥都会让产物签名与已装版本不同, 用户只能卸载重装, 服务器列表与 token (app 私有存储) 一并丢失. CI 在密钥缺席时直接失败, 打包后再校验产物未使用 debug 证书; 只有本机构建才回退到 debug 包.
+
+**debug 构建是另一个应用**: 包名带 `.debug` 后缀, 版本串带 `-debug`, 应用名带 `Debug` 后缀, 因此与正式包可同时安装, 各自的私有存储 (服务器列表、cookie 罐、`localStorage`) 互不相干. 代价是两份数据各配一次, 换来的是能并存、能一眼分清; 两者 `versionCode` 相同, 不能相互比较, 也不存在升级关系.
 
 发版**完全独立**: 只有 `app-` 前缀的 tag 触发 APK 构建与 Release, 本体的 `v*` 不产出 APK — 本体发版通常不含 APP 变更, 每次都附一份 APK 会让下载的人以为 APP 也更新了. 这些 tag 解析不出版本, 本体的更新检查会跳过它们 (检查读取发布列表而不是 `/releases/latest`, 见 `src/amane/release.py`); APP 发布也不占用 Releases 页的 Latest 徽标. Release 正文手工填写, 不用自动生成 — 自动生成以上一个 Release (`v*`) 为起点, 会把服务端与桌面端的提交算进 APP 发版. 分发方式是 GitHub Release 上的 APK 侧载; 应用商店对本项目的媒体内容域不可行, 因此不引入 Play 相关的签名托管与更新机制.
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 编辑已保存的服务器; 地址改掉后原地址不再保留 (见 ServerStore.update). -->
+<!-- 服务器表单: 添加与编辑共用一个弹窗, 编辑时按原地址定位条目 (见 ServerStore.update). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -15,7 +15,7 @@
         android:text="@string/setup_name_label" />
 
     <EditText
-        android:id="@+id/edit_name"
+        android:id="@+id/form_name"
         style="@style/Widget.Amane.Field"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
         android:text="@string/setup_server_label" />
 
     <EditText
-        android:id="@+id/edit_server"
+        android:id="@+id/form_server"
         style="@style/Widget.Amane.Field"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -50,8 +50,9 @@
         android:layout_marginTop="14dp"
         android:text="@string/setup_token_label" />
 
+    <!-- 明文显示: 同处应用私有存储, 掩码不构成保护; 长随机串需要能核对. -->
     <EditText
-        android:id="@+id/edit_token"
+        android:id="@+id/form_token"
         style="@style/Widget.Amane.Field"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -61,9 +62,18 @@
         android:inputType="textVisiblePassword"
         android:singleLine="true" />
 
+    <ProgressBar
+        android:id="@+id/form_progress"
+        style="?android:attr/progressBarStyleSmall"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+        android:visibility="gone" />
+
     <!-- 校验失败的提示留在弹窗里: 关闭后再报错, 用户必须重新填写. -->
     <TextView
-        android:id="@+id/edit_error"
+        android:id="@+id/form_error"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"

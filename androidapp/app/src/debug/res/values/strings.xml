@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- debug 构建覆盖应用名: 与正式包同装时, 桌面图标与标题栏上先能分清点的是哪一个. -->
+<resources>
+    <string name="app_name">Amane Debug</string>
+</resources>
