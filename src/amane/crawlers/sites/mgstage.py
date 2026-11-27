@@ -170,18 +170,24 @@ class MGStageCrawler(Crawler):
         return f"{self.base_url}/product/product_detail/{number}/"
 
     async def _from_index(self, number: str) -> IndexResult:
-        """按去掉开头数字段的番号对齐; 索引不可用时返回空结论, 由后两档兜底."""
+        """按去掉开头数字段的番号对齐; 索引不可用时返回空结论, 由后两档兜底.
+
+        同尾号不止一条时仍按 ``select_number_index`` 取舍: 入参本身写着数字段 (``483SGK-004``) 的能精确
+        命中; 只有入参没写数字段而站点上确有两部 (``SGK-004`` 对 ``483SGK-004`` / ``902SGK-004``) 才是
+        无法确认, 此时判未命中, 不降级 —— 降级到直连也只会落到同一批候选上.
+        """
         index = await self._ensure_index()
         if index is None:
             return IndexResult()
         found = index.candidates(number)
         if not found:
             return IndexResult()
-        if len(found) > 1:
+        picked = select_number_index(found, number)
+        if picked is None:
             self.logger.debug("catalog index: several entries share the tail", number=number, entries=found)
             return IndexResult(ambiguous=True)
-        self.logger.debug("search hit", number=number, via="index", entry=found[0])
-        return IndexResult(hit=self._detail_url(found[0]))
+        self.logger.debug("search hit", number=number, via="index", entry=found[picked])
+        return IndexResult(hit=self._detail_url(found[picked]))
 
     async def _search_number(self, number: str, query_number: str) -> str | None:
         # 先尝试直接访问详情页.

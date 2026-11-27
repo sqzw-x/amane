@@ -4,6 +4,7 @@ import gzip
 
 import pytest
 
+from amane.crawlers.parsing import select_number_index
 from amane.crawlers.sites.mgstage import CatalogUnusable, _poster_url, parse_catalog
 
 
@@ -56,10 +57,14 @@ def test_catalog_keys_on_tail(number: str, expected: str | None) -> None:
 
 
 def test_catalog_keeps_ambiguous_entries() -> None:
-    """同一尾号在站点上确有两部作品时两条都保留, 由调用方判为无法确认而不是取其一."""
+    """同一尾号在站点上确有两部作品时两条都保留, 由调用方按入参取舍."""
     index = parse_catalog([_urlset("483SGK-004", "902SGK-004")])
     assert index.candidates("SGK-004") == ("483SGK-004", "902SGK-004")
     assert index.candidates("483SGK-004") == ("483SGK-004", "902SGK-004")
+    # 入参写着数字段时能精确命中其中一条; 没写时两条都是候选, 无法确认.
+    assert select_number_index(index.candidates("483SGK-004"), "483SGK-004") == 0
+    assert select_number_index(index.candidates("902SGK-004"), "902SGK-004") == 1
+    assert select_number_index(index.candidates("SGK-004"), "SGK-004") is None
 
 
 def test_catalog_merges_shards() -> None:
