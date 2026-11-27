@@ -532,6 +532,14 @@ export type AgentConfig = {
      */
     rate_limit?: number;
     /**
+     * Retry Initial S
+     */
+    retry_initial_s?: number;
+    /**
+     * Retry Max S
+     */
+    retry_max_s?: number;
+    /**
      * Sql Timeout Ms
      */
     sql_timeout_ms?: number;
@@ -657,7 +665,7 @@ export type AgentTraceResponse = {
     /**
      * Events
      */
-    events: Array<UserMessageRow | ReasoningDeltaRow | TextDeltaRow | ToolCallRow | ToolResultRow | RequestUsageRow | TurnUsageRow | ApprovalsRow | ErrorRow | CancelledRow>;
+    events: Array<UserMessageRow | ReasoningDeltaRow | TextDeltaRow | ToolCallRow | ToolResultRow | RequestUsageRow | TurnUsageRow | ApprovalsRow | RetriedRow | ErrorRow | CancelledRow>;
     /**
      * Turn Running
      */
@@ -4004,6 +4012,40 @@ export type RescrapeSubmission = {
  * 滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.
  */
 export type RescrapeTarget = 'metadata' | 'actor';
+
+/**
+ * RetriedRow
+ *
+ * 一次失败请求的重试记录; 成功的那次不留行.
+ *
+ * 重试可能持续很久, 既不加行也不报错时页面只有转圈, 分不清是卡住还是在等.
+ */
+export type RetriedRow = {
+    /**
+     * Seq
+     */
+    seq?: number | null;
+    /**
+     * At
+     */
+    at?: string;
+    /**
+     * Type
+     */
+    type: 'retried';
+    /**
+     * Attempt
+     */
+    attempt: number;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
+    /**
+     * Reason
+     */
+    reason: string;
+};
 
 /**
  * RoutineType

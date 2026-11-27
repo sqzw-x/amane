@@ -83,6 +83,7 @@ import {
   foldTrace,
   type AgentMessage,
   type AgentPart,
+  type AgentRetryPart,
   type AgentToolCallPart,
   type TraceRow,
 } from "@/lib/agent/trace";
@@ -213,11 +214,31 @@ function Part({ part, streaming }: { part: AgentPart; streaming: boolean }) {
       return <ReasoningPart text={part.text} />;
     case "tool-call":
       return <ToolCallPart part={part} running={streaming && part.result === undefined} />;
+    case "data-retry":
+      return <RetryPart part={part} />;
     case "data-request-usage":
       return <RequestUsageBar usage={part.data} />;
     case "data-turn-usage":
       return <TokenUsageBar usage={part.data} />;
   }
+}
+
+/** 重试提示: 上游失败后自动重发, 如实报出第几次、等多久、为什么.
+
+    重试不折叠进活动块: 它解释的是「为什么还没有新产出」, 收起来就看不见了.
+*/
+function RetryPart({ part }: { part: AgentRetryPart }) {
+  const { t } = useTranslation("agent");
+  return (
+    <Box px="sm" py={2}>
+      <Text size="xs" c="dimmed">
+        {t("retryNotice", { n: part.data.attempt, seconds: (part.data.delayMs / 1000).toFixed(1) })}
+      </Text>
+      <Text size="xs" c="dimmed" opacity={0.7} style={{ overflowWrap: "anywhere" }}>
+        {part.data.reason}
+      </Text>
+    </Box>
+  );
 }
 
 /** 展示分段: `plain` 逐部件直出 (正文与紧随其后的用量条), `activity` 收进活动块 (思考与工具调用). */
@@ -232,7 +253,8 @@ type PartChunk = { kind: "plain"; indices: number[] } | { kind: "activity"; indi
 function partChunks(parts: readonly AgentPart[]): PartChunk[] {
   const chunks: PartChunk[] = [];
   for (const [index, part] of parts.entries()) {
-    const trailing = part.type === "data-request-usage";
+    // 重试与逐请求用量都是「这次响应」的附属: 随前一段走, 不另起一段, 也不把活动切开
+    const trailing = part.type === "data-request-usage" || part.type === "data-retry";
     const activity = part.type === "reasoning" || part.type === "tool-call";
     const open = chunks.at(-1);
     if (open !== undefined && (trailing || activity === (open.kind === "activity"))) {

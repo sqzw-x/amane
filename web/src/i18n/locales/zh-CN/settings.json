@@ -786,6 +786,14 @@
       "model": {
         "label": "模型"
       },
+      "retry_initial_s": {
+        "label": "重试退避起始 (秒)",
+        "description": "请求失败后首次等待时长; 此后每次翻倍, 直到上限"
+      },
+      "retry_max_s": {
+        "label": "重试退避上限 (秒)",
+        "description": "单次等待的上限; 重试本身不设次数上限, 由用户停止回合终止"
+      },
       "thinking": {
         "label": "默认思考强度",
         "description": "可在对话中修改",

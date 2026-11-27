@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx2
 from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings, ThinkingLevel
@@ -9,6 +10,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ..config import AgentConfig, AgentThinkingMode
 from ..llm import build_model as build_llm_model
+from ..llm.retry import build_retry_transport
 from .capabilities import build_capabilities
 from .schema_docs import build_schema_docs
 from .tool_names import ToolNameAlias
@@ -94,8 +96,18 @@ def resolve_model_settings(config: AgentConfig, *, session_thinking: AgentThinki
 
 
 def build_model(config: AgentConfig) -> Model:
-    """不检查 api_key. 不传 ``http_client``: 传输客户端由 pydantic-ai 构造并托管, 与翻译共用协议映射."""
-    return build_llm_model(config.api_type, base_url=config.base_url, api_key=config.api_key, model=config.model)
+    """不检查 api_key. 传输层由本模块构造并托管: 助理对话按可配置退避无限重试 (见 ``llm/retry.py``).
+
+    重试进展经 ``llm/retry.py::retry_sink`` 转发给正在跑的回合; 没有回合 (如标题生成) 时静默重试.
+    """
+    http_client = httpx2.AsyncClient(transport=build_retry_transport(config.retry_initial_s, config.retry_max_s))
+    return build_llm_model(
+        config.api_type,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        model=config.model,
+        http_client=http_client,
+    )
 
 
 def build_agent(config: AgentConfig) -> Agent[AgentDeps, str | DeferredToolRequests] | None:

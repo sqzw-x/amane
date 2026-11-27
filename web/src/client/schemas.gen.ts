@@ -902,6 +902,20 @@ export const AgentConfigSchema = {
             title: 'Rate Limit',
             default: 2
         },
+        retry_initial_s: {
+            type: 'number',
+            maximum: 60,
+            minimum: 0.1,
+            title: 'Retry Initial S',
+            default: 1
+        },
+        retry_max_s: {
+            type: 'number',
+            maximum: 600,
+            minimum: 1,
+            title: 'Retry Max S',
+            default: 60
+        },
         sql_timeout_ms: {
             type: 'integer',
             maximum: 60000,
@@ -1145,6 +1159,9 @@ export const AgentTraceResponseSchema = {
                         $ref: '#/components/schemas/ApprovalsRow'
                     },
                     {
+                        $ref: '#/components/schemas/RetriedRow'
+                    },
+                    {
                         $ref: '#/components/schemas/ErrorRow'
                     },
                     {
@@ -1159,6 +1176,7 @@ export const AgentTraceResponseSchema = {
                         error: '#/components/schemas/ErrorRow',
                         reasoning_delta: '#/components/schemas/ReasoningDeltaRow',
                         request_usage: '#/components/schemas/RequestUsageRow',
+                        retried: '#/components/schemas/RetriedRow',
                         text_delta: '#/components/schemas/TextDeltaRow',
                         tool_call: '#/components/schemas/ToolCallRow',
                         tool_result: '#/components/schemas/ToolResultRow',
@@ -3684,6 +3702,8 @@ export const HotSettingsSchema = {
                 model: 'gpt-4o-mini',
                 max_tokens: 128000,
                 rate_limit: 2,
+                retry_initial_s: 1,
+                retry_max_s: 60,
                 sql_timeout_ms: 5000,
                 result_cache_ttl_s: 3600,
                 result_cache_max_entries: 64,
@@ -7798,6 +7818,53 @@ export const RescrapeTargetSchema = {
     ],
     title: 'RescrapeTarget',
     description: '滚动补刮选取的实体种类. 每个已选项各自选取 limit 条.'
+} as const;
+
+export const RetriedRowSchema = {
+    properties: {
+        seq: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Seq'
+        },
+        at: {
+            type: 'string',
+            title: 'At'
+        },
+        type: {
+            type: 'string',
+            const: 'retried',
+            title: 'Type'
+        },
+        attempt: {
+            type: 'integer',
+            title: 'Attempt'
+        },
+        delay_ms: {
+            type: 'integer',
+            title: 'Delay Ms'
+        },
+        reason: {
+            type: 'string',
+            title: 'Reason'
+        }
+    },
+    additionalProperties: false,
+    type: 'object',
+    required: [
+        'type',
+        'attempt',
+        'delay_ms',
+        'reason'
+    ],
+    title: 'RetriedRow',
+    description: '一次失败请求的重试记录; 成功的那次不留行.\n\n重试可能持续很久, 既不加行也不报错时页面只有转圈, 分不清是卡住还是在等.'
 } as const;
 
 export const RoutineTypeSchema = {

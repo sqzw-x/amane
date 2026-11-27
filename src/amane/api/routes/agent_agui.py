@@ -57,6 +57,7 @@ from ...agent.rows import (
     ErrorRow,
     ReasoningDeltaRow,
     RequestUsageRow,
+    RetriedRow,
     TextDeltaRow,
     ToolCallRow,
     ToolResultRow,
@@ -71,6 +72,7 @@ from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
 from ...agent.usage import request_usage, turn_usage_from_run
 from ...db.models import AgentSessionStatus
+from ...llm.retry import retry_sink
 from ..deps import AgentDep, RepoDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
 
@@ -341,11 +343,16 @@ async def run_agent_agui(
             return
             yield
 
+        async def _on_retry(attempt: int, delay_s: float, reason: str) -> None:
+            await store.append_row(
+                RetriedRow(type="retried", attempt=attempt, delay_ms=round(delay_s * 1000), reason=reason)
+            )
+
         async def consume() -> None:
             # 失败与取消都要把已产生的往返落盘: 页面已经把这些展示给用户, 历史缺一截就会让下一轮的
             # 上下文与所见内容对不上. 捕获到的是异常路径上已有的部分 (用户提示与被打断的响应,
             # 后者标 state='interrupted'), 框架会在下一轮据此补出中断回执.
-            with capture_run_messages() as captured:
+            with capture_run_messages() as captured, retry_sink(_on_retry):
                 try:
                     async for event in adapter.run_stream(
                         message_history=history,
