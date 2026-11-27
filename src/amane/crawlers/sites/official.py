@@ -87,7 +87,21 @@ MANUFACTURER_DOMAINS: dict[Manufacturer, str] = {
 
 
 MANUFACTURER_SERIES: dict[Manufacturer, list[str]] = {
-    Manufacturer.S1: ["sivr", "ssis", "ssni", "snis", "soe", "oned", "one", "onsd", "ofje", "sps", "tksoe"],
+    Manufacturer.S1: [
+        "sivr",
+        "ssis",
+        "ssni",
+        "sone",
+        "snos",
+        "snis",
+        "soe",
+        "oned",
+        "one",
+        "onsd",
+        "ofje",
+        "sps",
+        "tksoe",
+    ],
     Manufacturer.MOODYZ: [
         "mdvr",
         "midv",
