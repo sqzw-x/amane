@@ -253,22 +253,16 @@ class PrestigeCrawler(Crawler):
     def _sku_url(self, sku_id: str) -> str:
         return f"{self.base_url}/api/sku/item/{sku_id}"
 
-    def _product_url(self, product_uuid: str) -> str:
-        """详情页地址: 商品页可读, API 地址在浏览器里只能看到原始 JSON."""
-        return f"{self.base_url}/goods/{product_uuid}"
-
     def _product_api_url(self, product_uuid: str) -> str:
+        """取详情用的 API 地址; 面向用户的来源链接另由 ``_goods_url`` 组装."""
         return f"{self.base_url}/api/product/{product_uuid}"
 
-    def _goods_url(self, product_uuid: object, sku_id: str | None) -> str | None:
-        """来源链接: 面向用户的商品详情页, 带 ``skuId`` 才能在多 SKU 商品上定位到本番号.
+    def _goods_url(self, product_uuid: str, sku_id: str) -> str:
+        """来源链接: 可读的商品详情页, 带 ``skuId`` 才能在多 SKU 商品上定位到本番号.
 
-        刮削仍取 ``_product_api_url``; 商品页没有对应商品 (缺 uuid) 时不给链接, 不把 API 地址当退路.
+        API 地址在浏览器里只能看到原始 JSON, 因此不把它当退路.
         """
-        if not isinstance(product_uuid, str) or not product_uuid:
-            return None
-        page = f"{self.base_url}/goods/{product_uuid}"
-        return f"{page}?skuId={quote(sku_id)}" if sku_id else page
+        return f"{self.base_url}/goods/{product_uuid}?skuId={quote(sku_id)}"
 
     def _sitemap_url(self) -> str:
         return f"{self.base_url}/api/sku/sitemap"
@@ -455,7 +449,10 @@ class PrestigeCrawler(Crawler):
             if img_url:
                 extrafanart.append(img_url)
 
-        external_id = data.get("uuid", "")
+        # 商品页地址由 uuid 组装; 缺 uuid 时拼不出可读链接, 不给而不是退回 API 地址.
+        uuid = data.get("uuid")
+        external_id = uuid if isinstance(uuid, str) and uuid else None
+        source_url = None if external_id is None else self._goods_url(external_id, preferred_sku(sku_ids) or number)
 
         return MediaMetadata(
             number=number,
@@ -472,7 +469,6 @@ class PrestigeCrawler(Crawler):
             thumb_urls=[thumb_url] if thumb_url else [],
             directors=directors,
             extrafanart=extrafanart,
-            # 来源链接指向可读的商品页: API 地址在浏览器里只能看到原始 JSON.
-            source_url=self._goods_url(external_id, preferred_sku(sku_ids)),
-            external_id=external_id or None,
+            source_url=source_url,
+            external_id=external_id,
         )
