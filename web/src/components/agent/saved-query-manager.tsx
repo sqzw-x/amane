@@ -19,7 +19,6 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconDownload,
-  IconExternalLink,
   IconTable,
   IconTrash,
 } from "@tabler/icons-react";
@@ -34,12 +33,7 @@ import type { SavedQueryResponse } from "@/client/types.gen";
 import { HintedActionIcon } from "@/components/common/hinted-action-icon";
 import { extractErrorMessage } from "@/lib/api-error";
 import { confirm } from "@/lib/confirm";
-import {
-  savedQueryBrowseHref,
-  SAVED_QUERY_BADGE_COLOR,
-  SAVED_QUERY_ENTITY_LABEL_KEY,
-  SAVED_QUERY_OPEN_LABEL_KEY,
-} from "@/lib/saved-query/display";
+import { SAVED_QUERY_BADGE_COLOR, SAVED_QUERY_ENTITY_LABEL_KEY } from "@/lib/saved-query/display";
 import { downloadSavedQueryResult } from "@/lib/saved-query/download";
 
 function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChanged: () => void }) {
@@ -68,7 +62,6 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
   });
 
   const entityLabel = t(SAVED_QUERY_ENTITY_LABEL_KEY[item.entity], { ns: "savedQueries" });
-  const openHref = savedQueryBrowseHref({ id: item.id, entity: item.entity });
 
   async function handleDelete() {
     const ok = await confirm({
@@ -131,19 +124,6 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
         </Collapse>
 
         <Group gap="xs" wrap="wrap">
-          {openHref != null && (
-            <Button
-              component="a"
-              href={openHref}
-              target="_blank"
-              rel="noreferrer"
-              size="compact-sm"
-              variant="light"
-              leftSection={<IconExternalLink size={14} />}
-            >
-              {t(SAVED_QUERY_OPEN_LABEL_KEY[item.entity], { ns: "savedQueries" })}
-            </Button>
-          )}
           <Button
             component="a"
             href={`/saved-queries/${item.id}`}
@@ -153,7 +133,7 @@ function SavedQueryRow({ item, onChanged }: { item: SavedQueryResponse; onChange
             variant="light"
             leftSection={<IconTable size={14} />}
           >
-            {t(SAVED_QUERY_OPEN_LABEL_KEY.data, { ns: "savedQueries" })}
+            {t("openData", { ns: "savedQueries" })}
           </Button>
           <Button
             size="compact-sm"

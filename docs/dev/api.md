@@ -41,6 +41,7 @@ HTTP 宿主与 DI 在 `app.py` / `deps.py` / `middleware.py` / `spa.py`; `routes
 OpenAPI 列出参数, 不表达组合语义:
 
 - metadata 同 kind 的筛选: 关联类 AND / 标量类 OR; 跨 kind 始终 AND. `saved_query_id` 与其它筛选项 AND; `data` 实体不可作列表筛选 (400). 关联文件相位筛选与 `has_files` 一样 AND (布尔项 True = 至少一份具备, False = 没有任何一份具备), 列表项带聚合 `file_phase`. `library_id` 属关联文件维度: 同一筛选内多库 OR, 条目在任一选中库中有文件即命中, 无文件条目不命中; 见 [data-model.md](data-model.md) / [agent.md](agent.md). 八组 id 参数每组上限 100、合计上限 200, 超限 422; 关联类每组聚合为一条子查询, 不随 id 数增加条件.
+- `POST /metadata/search` 与 `POST /actors/search` 接收版本化条件树, 仅允许白名单字段与运算符, `AND` / `OR` / 组级 `NOT` 均以实体为单位编译. `saved_query_id` 不得参与组合筛选; 两端 GET 保持旧契约供既有深链使用. 多项关联文件条件分别判定, 可由不同文件满足; 否定按缺失值不命中的两值补集处理. 片库语义检索以同一条件树收窄候选集, 空候选不退回全库.
 - GET `/media` 的相位 query 作用在单行列上; `uncensored` 与 `content_type` 是例外: 两者都按所属条目判定 (`uncensored` = 条目无码或这一份带无码标记, `content_type` = 条目类型), 未绑定条目的文件只看自身标记、不命中任何类型; 布尔侧按空值安全比较. 未知 `definition` → 422; `SD` / `HD` 是 `480p` / `720p` 的别名 (大小写不敏感, web 侧同名映射在 `web/src/lib/exhaustive-maps.ts`, 改一处须同步另一处), 归一后照常筛选; 相位列不纳入 PATCH.
 - 手动裁切基准是源图**当前本地文件**像素 (含就地超分后尺寸): 海报以 `thumb_urls[0]` 为源并替换 `poster_urls`, 演员头像以 `image_urls[0]` 为源并前插保留原图; 库路径海报不受影响. locator 见 [data-model.md](data-model.md).
 - `PUT /metadata/{id}/locks` 与 `PUT /actors/{id}/locks` 整体替换锁定字段集合; 锁语义见 [data-model.md](data-model.md)「字段锁定」.
@@ -50,7 +51,7 @@ OpenAPI 列出参数, 不表达组合语义:
 - `/network/browser` 探测浏览器后端能否用于本实例: 本地引擎查模块是否在分发包内, `bsk` 调 CLI 的 `status` (HTTP 200 恒定, 结论就是响应体), Solver 只做一次 `sessions.list` 协议握手, 不渲染页面 — 真实抓取由 `/network/check` 覆盖.
 - `/network/check` 的探测范围 = 当前热配置真正会请求的来源 (各类型路由的并集 + 演员资料来源 / 头像来源), 省略 `source_ids` 即全量. `source_id` 是 `str` 而非 `SiteName` 枚举 (第三方来源是 `namespace.local`, 且来源集合随插件增删变化), 未知值无法用 schema 拒绝, 不存在的 ID 计入条目返回 `SKIPPED`. 逐来源的失败只进条目, 端点始终 200 — 探测结果本身就是响应体; `reason` 只在失败时给出, `skip_reason` 只在未探测时给出, `detail` 是语言中立的补充说明 (界面原样渲染, 不翻译). 探测不进入任务队列, 也不写入站点 outcome (那是刮削任务的记录).
 - 评论正文先去除首尾空白再校验长度, 全空白与超过 10000 字符均为 422. `updated_at` 晚于 `created_at` 表示正文被编辑过: PATCH 提交与库中一致的正文不写库, 也不刷新 `updated_at`, 前端据此判定「已编辑」; 排序由前端在详情响应上完成, 端点不提供 order 参数; 正文按 Markdown 存储与返回, 服务端不解析.
-- `/metadata` 的语义参数: `semantic_query` 出现时接管排序, 整句只编码一次, 封面与剧照共用一次点积; 候选集来自同一套筛选 (含 `search` 与 `saved_query_id`), 无筛选时扫全索引. `semantic_kind=all|cover|still` 选参与排名的图片来源; `sort_by` / `order` 被忽略, `offset` / `limit` (上限 200) 直接分页, `total` 是候选条目总数 (按条目去重). `items` 用同一列表项模型, 命中图放在并列的 `semantic_hits` (`id` / `kind` / `resource_url` / `similarity`), 同一条目只保留名次最高的那张图; `similarity` 只在同一次查询内可比, 不设阈值; 同分按条目 id 升序, 翻页稳定. 模型未就绪时仅该参数出现时 503; 索引生命周期见 [semantic.md](semantic.md).
+- `/metadata` 的语义参数: `semantic_query` 出现时接管排序, 整句只编码一次, 封面与剧照共用一次点积; 候选集来自同一套筛选 (含 `search` 与 `saved_query_id`), 无筛选时扫全索引. `semantic_kind=all|cover|still` 选参与排名的图片来源; `sort_by` / `order` 被忽略, `offset` / `limit` (上限 200) 直接分页, `total` 是候选条目总数 (按条目去重). GET 与 POST 共用 `routes/metadata.py::_ranked_metadata_page`, 按相同顺序回填列表项与 `semantic_hits`, 每个番号条目只保留得分最高的图片. `similarity` 只在同一次查询内可比, 不设阈值; 同分按条目 id 升序, 翻页稳定. 模型未就绪时仅该参数出现时 503; 索引生命周期见 [semantic.md](semantic.md).
 - `/files`: 路径解析为非严格 (虚拟 / 网络挂载盘无法规范化查询时按字面兜底), 相对 `path` 经 `base` 参数解析 (缺省 = 首个安全目录). 响应含规范 `path` (resolve 后的绝对路径), 前端文件浏览器以它为面包屑的唯一权威形态, 不做分段拼接.
 
 ## 依赖注入

@@ -4,6 +4,7 @@ from typing import Unpack, cast
 
 from sqlalchemy import asc
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -344,11 +345,22 @@ class FacetsRepoMixin(RepositoryMixinBase):
             return list((await session.exec(stmt.offset(offset).limit(limit))).all())
 
     async def browse_actors(
-        self, params: ActorBrowseParams, *, id_subquery_sql: str | None = None
+        self,
+        params: ActorBrowseParams,
+        *,
+        id_subquery_sql: str | None = None,
+        advanced_filter: ColumnElement[bool] | None = None,
+        execution_deadline: float | None = None,
     ) -> tuple[list[ActorBrowseItem], int]:
         """列表行不含简介/别名/源字典."""
         async with self._session() as session:
-            return await browse_actors(session, params, id_subquery_sql=id_subquery_sql)
+            return await browse_actors(
+                session,
+                params,
+                id_subquery_sql=id_subquery_sql,
+                advanced_filter=advanced_filter,
+                execution_deadline=execution_deadline,
+            )
 
     async def save_actor(self, actor: Actor, *, aliases: Sequence[str] | None = None) -> Actor | None:
         """不存在返回 None. ``aliases`` 提供时整表替换别名行; 省略或别名已锁则不动别名.

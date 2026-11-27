@@ -1,11 +1,17 @@
 """身份治理 (rename/merge/delete/rules) 仍由 /facets/actor 处理."""
 
+import time
 from typing import Annotated, cast
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ...db.models import Actor, FacetKind, SavedQueryEntity, TaskType
+from ...db.query_budget import (
+    DEFAULT_ADVANCED_FILTER_TIMEOUT_SECONDS,
+    QueryBudgetExceeded,
+    QueryBudgetUnavailable,
+)
 from ...db.repo_types import ActorBrowseItem, ActorBrowseParams, ActorPersonFields, WriteMode
 from ...handlers import ActorScrapePayload
 from ...media import manual_crop_image
@@ -29,6 +35,8 @@ from ..models import (
     UserTagResponse,
 )
 from ..models.actors import normalize_actor_locks
+from ..models.filter_expression import ActorSearchRequest
+from ..support.filter_expression import compile_actor_filter
 from .saved_queries import resolve_saved_query_id_subquery
 
 logger = structlog.get_logger()
@@ -111,6 +119,32 @@ async def list_actors(repo: RepoDep, params: Annotated[ActorBrowseParams, Query(
         id_subquery_sql = await resolve_saved_query_id_subquery(repo, params.saved_query_id, SavedQueryEntity.ACTOR)
     items, total = await repo.browse_actors(params, id_subquery_sql=id_subquery_sql)
     return ActorListResponse(items=[_from_browse(i) for i in items], total=total)
+
+
+@router.post("/search")
+async def search_actors(req: ActorSearchRequest, request: Request, repo: RepoDep) -> ActorListResponse:
+    if "saved_query_id" in request.query_params:
+        raise HTTPException(status_code=422, detail="saved_query_id cannot be combined with advanced search")
+    params = ActorBrowseParams(
+        search=req.search,
+        offset=req.offset,
+        limit=req.limit,
+        sort_by=req.sort_by,
+        order=req.order,
+    )
+    advanced_filter = compile_actor_filter(req.expression)
+    deadline = time.monotonic() + DEFAULT_ADVANCED_FILTER_TIMEOUT_SECONDS
+    try:
+        items, total = await repo.browse_actors(
+            params,
+            advanced_filter=advanced_filter,
+            execution_deadline=deadline,
+        )
+    except QueryBudgetExceeded as exc:
+        raise HTTPException(status_code=503, detail="高级筛选查询超时，请缩小条件后重试") from exc
+    except QueryBudgetUnavailable as exc:
+        raise HTTPException(status_code=503, detail="当前数据库驱动无法限制高级筛选查询") from exc
+    return ActorListResponse(items=[_from_browse(item) for item in items], total=total)
 
 
 @router.post("/batch/user-tags")

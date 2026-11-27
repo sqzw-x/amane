@@ -400,6 +400,28 @@ export type ActorScrapingConfig = {
 };
 
 /**
+ * ActorSearchRequest
+ */
+export type ActorSearchRequest = {
+    /**
+     * Version
+     */
+    version: 1;
+    expression?: FilterGroup | null;
+    search?: BoundedString | null;
+    /**
+     * Offset
+     */
+    offset?: number;
+    order?: SortOrder;
+    /**
+     * Limit
+     */
+    limit?: number;
+    sort_by?: ActorSortField;
+};
+
+/**
  * ActorSortField
  */
 export type ActorSortField = 'name' | 'count' | 'updated_at' | 'has_image' | 'birthday' | 'height' | 'bust' | 'waist' | 'hip' | 'cup';
@@ -716,6 +738,8 @@ export type BodyInstallPlugin = {
      */
     path?: string | null;
 };
+
+export type BoundedString = string;
 
 /**
  * BrowserBackendItemResponse
@@ -1800,6 +1824,49 @@ export type FilePhaseSummary = {
      */
     definition?: string | null;
 };
+
+export type FilterField = 'actor_id' | 'director_id' | 'tag_id' | 'user_tag_id' | 'studio_id' | 'publisher_id' | 'series_id' | 'library_id' | 'has_files' | 'has_subtitle' | 'vr' | 'uncensored' | 'mosaic' | 'definition' | 'content_type' | 'number' | 'title' | 'gender' | 'has_person' | 'has_image' | 'birthday' | 'height' | 'bust' | 'waist' | 'hip' | 'cup' | 'name' | 'alias' | 'birthplace';
+
+/**
+ * FilterGroup
+ */
+export type FilterGroup = {
+    /**
+     * Type
+     */
+    type: 'group';
+    /**
+     * Op
+     */
+    op: 'and' | 'or';
+    /**
+     * Negate
+     */
+    negate?: boolean;
+    /**
+     * Children
+     */
+    children: Array<FilterNode>;
+};
+
+export type FilterNode = FilterGroup | FilterRule;
+
+export type FilterOperator = 'eq' | 'contains' | 'gte' | 'lte';
+
+/**
+ * FilterRule
+ */
+export type FilterRule = {
+    /**
+     * Type
+     */
+    type: 'rule';
+    field: FilterField;
+    operator: FilterOperator;
+    value: FilterValue;
+};
+
+export type FilterValue = boolean | number | number | BoundedString;
 
 /**
  * FootprintNoticeKind
@@ -3221,6 +3288,36 @@ export type MetadataResponse = {
     raw?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * MetadataSearchRequest
+ */
+export type MetadataSearchRequest = {
+    /**
+     * Version
+     */
+    version: 1;
+    expression?: FilterGroup | null;
+    search?: BoundedString | null;
+    /**
+     * Offset
+     */
+    offset?: number;
+    order?: SortOrder;
+    /**
+     * Limit
+     */
+    limit?: number;
+    sort_by?: MetadataSortField;
+    /**
+     * Semantic Query
+     */
+    semantic_query?: string | null;
+    /**
+     * Semantic Kind
+     */
+    semantic_kind?: 'all' | 'cover' | 'still';
 };
 
 /**
@@ -6610,6 +6707,31 @@ export type ListMetadataResponses = {
 
 export type ListMetadataResponse = ListMetadataResponses[keyof ListMetadataResponses];
 
+export type SearchMetadataData = {
+    body: MetadataSearchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/metadata/search';
+};
+
+export type SearchMetadataErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SearchMetadataError = SearchMetadataErrors[keyof SearchMetadataErrors];
+
+export type SearchMetadataResponses = {
+    /**
+     * Successful Response
+     */
+    200: MetadataListResponse;
+};
+
+export type SearchMetadataResponse = SearchMetadataResponses[keyof SearchMetadataResponses];
+
 export type BatchDeleteMetadataData = {
     body: MetadataBatchIdsRequest;
     path?: never;
@@ -7572,6 +7694,31 @@ export type ListActorsResponses = {
 };
 
 export type ListActorsResponse = ListActorsResponses[keyof ListActorsResponses];
+
+export type SearchActorsData = {
+    body: ActorSearchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/actors/search';
+};
+
+export type SearchActorsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SearchActorsError = SearchActorsErrors[keyof SearchActorsErrors];
+
+export type SearchActorsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActorListResponse;
+};
+
+export type SearchActorsResponse = SearchActorsResponses[keyof SearchActorsResponses];
 
 export type BatchActorUserTagsData = {
     body: ActorUserTagsRequest;

@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import time
 import uuid
@@ -8,13 +9,15 @@ import structlog
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from .models.filter_expression import MAX_FILTER_BODY_BYTES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from starlette.datastructures import Headers
     from starlette.requests import Request
-    from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = structlog.get_logger("amane.request")
 
@@ -99,6 +102,96 @@ def browser_source_allowed(headers: Headers, configured_origins: Sequence[str]) 
 def _token_matches(presented: str | None, expected: str) -> bool:
     """常量时间比较. ``compare_digest`` 对非 ASCII 的 ``str`` 抛出 ``TypeError``, 故先按 UTF-8 编码."""
     return presented is not None and hmac.compare_digest(presented.encode(), expected.encode())
+
+
+class FilterRequestBodyLimitMiddleware:
+    """对 AST 搜索路由在请求解析前限制原始 body 大小."""
+
+    _PATHS = frozenset({"/api/metadata/search", "/api/actors/search"})
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_concurrent: int = 2,
+        queue_timeout_seconds: float = 1.0,
+        body_read_timeout_seconds: float = 10.0,
+        body_idle_timeout_seconds: float = 2.0,
+    ) -> None:
+        self.app = app
+        self._search_slots = asyncio.Semaphore(max_concurrent)
+        self._queue_timeout_seconds = queue_timeout_seconds
+        self._body_read_timeout_seconds = body_read_timeout_seconds
+        self._body_idle_timeout_seconds = body_idle_timeout_seconds
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] != "POST" or scope["path"] not in self._PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        for name, value in scope["headers"]:
+            if name.lower() == b"content-length":
+                try:
+                    content_length = int(value)
+                except ValueError:
+                    response = JSONResponse(status_code=400, content={"detail": "Content-Length 无效"})
+                    await response(scope, receive, send)
+                    return
+                if content_length < 0:
+                    response = JSONResponse(status_code=400, content={"detail": "Content-Length 无效"})
+                    await response(scope, receive, send)
+                    return
+                if content_length > MAX_FILTER_BODY_BYTES:
+                    response = JSONResponse(status_code=413, content={"detail": "搜索请求体超过大小限制"})
+                    await response(scope, receive, send)
+                    return
+
+        loop = asyncio.get_running_loop()
+        body_deadline = loop.time() + self._body_read_timeout_seconds
+        body = bytearray()
+        while True:
+            remaining = body_deadline - loop.time()
+            if remaining <= 0:
+                response = JSONResponse(status_code=408, content={"detail": "读取搜索请求体超时"})
+                await response(scope, receive, send)
+                return
+            try:
+                message = await asyncio.wait_for(receive(), timeout=min(remaining, self._body_idle_timeout_seconds))
+            except TimeoutError:
+                response = JSONResponse(status_code=408, content={"detail": "读取搜索请求体超时"})
+                await response(scope, receive, send)
+                return
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > MAX_FILTER_BODY_BYTES:
+                response = JSONResponse(status_code=413, content={"detail": "搜索请求体超过大小限制"})
+                await response(scope, receive, send)
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        try:
+            await asyncio.wait_for(self._search_slots.acquire(), timeout=self._queue_timeout_seconds)
+        except TimeoutError:
+            response = JSONResponse(status_code=503, content={"detail": "高级筛选服务繁忙，请稍后重试"})
+            await response(scope, receive, send)
+            return
+
+        replayed = False
+
+        async def replay_receive() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        try:
+            await self.app(scope, replay_receive, send)
+        finally:
+            self._search_slots.release()
 
 
 class CORSPolicyMiddleware:

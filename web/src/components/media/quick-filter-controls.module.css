@@ -1,0 +1,52 @@
+.compactField {
+  width: 9.5rem;
+}
+
+.rangeField {
+  width: 20rem;
+}
+
+.bound {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick {
+  min-width: 0;
+  margin-top: var(--mantine-spacing-md);
+  padding-top: var(--mantine-spacing-md);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.quickLabel {
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  color: var(--mantine-color-text);
+}
+
+.quickToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.chevron,
+.chevronOpen {
+  color: var(--mantine-color-dimmed);
+  transition: transform 150ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 35.99em) {
+  .compactField {
+    width: 8.5rem;
+  }
+
+  .rangeField {
+    width: 100%;
+  }
+}

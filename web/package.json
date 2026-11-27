@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check": "oxlint . && oxfmt --check . && tsc -b --noEmit && pnpm i18n:ci",
     "fix": "oxfmt . && oxlint --fix .",
-    "test": "echo 'No web tests configured yet'",
+    "test": "node scripts/run-tests.mjs",
     "gen-client": "openapi-ts",
     "i18n:extract": "i18next-cli extract",
     "i18n:status": "i18next-cli status",

@@ -9,7 +9,7 @@
 | 域 | 路由 | 页面文件 | 主要协作文件 |
 |----|------|---------|-------------|
 | **Browse** | `/` | `routes/index.tsx` | `components/agent/` (`agent-home.tsx` 为对话主体), `lib/agent/` |
-| **Browse** | `/meta` | `routes/meta.tsx` + `meta.index.tsx` | `components/media/` (`poster-grid` / `meta-table` / `facet-filter-controls`), `lib/media/browse.ts` |
+| **Browse** | `/meta` | `routes/meta.tsx` + `meta.index.tsx` | `components/media/` (`poster-grid` / `meta-table` / `browse-filter-panel`), `lib/media/browse.ts` |
 | **Browse** | `/meta/$metadataId` | `routes/meta.$metadataId.tsx` | `components/media/playback-panel.tsx` → `playback-player.tsx`, `comment-section.tsx` → `comment-body.tsx`, `components/markdown/`, `lib/media/comment-markdown.ts`, `lib/media/metadata-fields.ts`, `components/media/field-lock.tsx` |
 | **Browse** | `/actors` | `routes/actors.tsx` + `actors.index.tsx` | `components/media/actor-grid.tsx` / `actor-table.tsx`, `lib/actors/browse.ts` |
 | **Browse** | `/actors/$actorId` | `routes/actors.$actorId.tsx` | `components/media/actor-card.tsx` / `actor-edit-dialog.tsx` / `field-lock.tsx`, `lib/actors/fields.ts`, `hooks/use-facet-identity-actions.ts` |
@@ -47,7 +47,9 @@
 
 窄屏 (md 以下) 的 `BrowsePageShell` 只剩一行: 标题 + 视图切换 + 筛选入口, 摘要 / 搜索 / 高级筛选面板 / 附属控件 / 右侧动作全进底部面板; 带高级筛选的列表页必须把面板经 `filterPanel` 槽传入, 不允许把 `<Collapse>` 放进 children — 否则开关与面板会分处两地. 同一批控件只渲染一处: 两个断点各一份会让搜索框在 DOM 里存在两个. `SelectionBar` 无选中时在窄屏整条不渲染; 订阅浏览页的 `FeedReader` 用同一形态.
 
-图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
+**组合筛选**由 `components/media/browse-filter-panel.tsx` 接入片库与演员页。编辑器草稿是 `lib/filter-expression.ts::FilterFormula`, URL 的 `f` 使用 version 2 保存公式项与各处连接符；version 1 的查询树链接继续兼容读取。`components/media/advanced-filter-editor/draft.ts` 修改公式草稿, 应用时按 AND 优先于 OR 编译为后端条件树, 请求不携带公式字段。仅旧参数生成初始公式, 与 `f` 共存时作为外层 AND 参与查询和应用。演员页仅在无 `f` 且省略性别时默认女演员。GET 与 POST 共用缓存失效前缀。无效 `f` 或与查询预设冲突时暂停请求, 页内允许清除 `f`。侧栏默认按实体校验公式和快捷参数。
+
+下拉浮层一律与输入框左边缘对齐: `theme.ts` 把 Combobox 定为 `bottom-start`, 并关掉左右方向的翻转与位移 (`flipAlignment` / `shift`), 宽度溢出交给 `size` 收窄. Mantine 9 的默认值是居中, 下拉比输入框宽时左边缘就会错开. 图标按钮的悬浮说明必须经 `HintedActionIcon` (Mantine Tooltip), 不允许 HTML `title`; disabled 控件须再包一层可接收指针事件的元素.
 
 ## 海报栅格
 
@@ -109,4 +111,4 @@ OpenAPI 字符串联合若需运行时迭代, 集中放置于 `lib/exhaustive-ma
 
 前端不保存可配置的 API 基址, 一律以当前 origin 为基址 (相对路径或 `window.location.origin`): 同源是鉴权的前提 (cookie 与 WS 握手都无法跨源, 理由见 [android.md](android.md)). 开发时由 `vite.config.ts` 的 `server.proxy` 把 `/api` 转发到后端, 目标端口取 `AMANE_PORT` (由 Justfile 的 `_dev-web` 注入, 与 uvicorn 同一个变量), 因此改端口只需改环境变量.
 
-路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. 类型、i18n 与 lint 的硬性约束由 `pnpm check` (tsc / oxlint / oxfmt / i18next extract) 把关.
+路由组件由 `tanstackRouter()` 的 `autoCodeSplitting` 拆为独立 chunk: 只服务单个路由的重型依赖必须留在该路由的 chunk, 从共享模块导入会把它移回入口 chunk. 类型、i18n 与 lint 由 `pnpm check` 校验. `web/scripts/run-tests.mjs` 仅加载 SSR 模块, 禁用客户端依赖预构建以保护同一工作树的开发缓存.

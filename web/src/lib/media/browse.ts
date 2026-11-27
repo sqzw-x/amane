@@ -10,6 +10,7 @@
 import type { ParseKeys } from "i18next";
 import { z } from "zod";
 import type { MetadataSortField } from "@/client/types.gen";
+import type { FilterNode } from "@/lib/filter-expression";
 import {
   CONTENT_TYPES,
   EMBEDDING_KINDS,
@@ -60,6 +61,7 @@ function normalizeDefinition(value: unknown): unknown {
 
 export const metaSearchSchema = z.object({
   q: z.string().optional(),
+  f: z.unknown().optional(),
   semantic: z.literal(1).optional(),
   /** 语义检索的图片来源; 缺省时封面与剧照均参与. */
   kind: z.enum(EMBEDDING_KINDS).optional().catch(undefined),
@@ -89,3 +91,61 @@ export const metaSearchSchema = z.object({
 });
 
 export type MetaSearch = z.infer<typeof metaSearchSchema>;
+
+/** 快捷筛选进入组合条件时保留原有同字段 AND / OR 语义. */
+export function metadataQuickFilterNodes(search: MetaSearch): FilterNode[] {
+  const nodes: FilterNode[] = [];
+  const facets = [
+    ["actor_id", search.actor_id, "and"],
+    ["director_id", search.director_id, "and"],
+    ["tag_id", search.tag_id, "and"],
+    ["user_tag_id", search.user_tag_id, "and"],
+    ["studio_id", search.studio_id, "or"],
+    ["publisher_id", search.publisher_id, "or"],
+    ["series_id", search.series_id, "or"],
+    ["library_id", search.library_id, "or"],
+  ] as const;
+  for (const [field, ids, op] of facets) {
+    if (!ids?.length) continue;
+    const children: FilterNode[] = ids.map((value) => ({
+      type: "rule",
+      field,
+      operator: "eq",
+      value,
+    }));
+    nodes.push(children.length === 1 ? children[0] : { type: "group", op, children });
+  }
+  for (const field of ["has_files", "vr", "has_subtitle", "uncensored"] as const) {
+    if (search[field] != null) {
+      nodes.push({ type: "rule", field, operator: "eq", value: search[field] === "true" });
+    }
+  }
+  for (const field of ["mosaic", "definition", "content_type"] as const) {
+    if (search[field] != null) {
+      nodes.push({ type: "rule", field, operator: "eq", value: search[field] });
+    }
+  }
+  return nodes;
+}
+
+export function withoutMetadataQuickFilters(search: MetaSearch): MetaSearch {
+  return {
+    ...search,
+    page: 1,
+    actor_id: undefined,
+    director_id: undefined,
+    tag_id: undefined,
+    studio_id: undefined,
+    publisher_id: undefined,
+    series_id: undefined,
+    user_tag_id: undefined,
+    library_id: undefined,
+    has_files: undefined,
+    has_subtitle: undefined,
+    vr: undefined,
+    uncensored: undefined,
+    mosaic: undefined,
+    definition: undefined,
+    content_type: undefined,
+  };
+}

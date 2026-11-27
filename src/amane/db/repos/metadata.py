@@ -32,6 +32,7 @@ from ..models import (
     metadata_number_predicate,
     metadata_vr_predicate,
 )
+from ..query_budget import sqlite_query_budget
 from ..repo_types import (
     MetadataFields,
     WriteMode,
@@ -191,6 +192,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         session: AsyncSession,
         *,
         keyword: str | None = None,
+        advanced_filter: ColumnElement[bool] | None = None,
         actor_ids: Sequence[int] | None = None,
         director_ids: Sequence[int] | None = None,
         tag_ids: Sequence[int] | None = None,
@@ -212,6 +214,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
     ) -> list[ColumnElement[bool]] | None:
         """列表与候选集共用的 WHERE 条件; ``None`` 表示条件互斥, 结果必为空."""
         conditions: list[ColumnElement[bool]] = []
+        if advanced_filter is not None:
+            conditions.append(advanced_filter)
         if ids is not None:
             id_list = list(unique_ids(ids))
             if not id_list:
@@ -278,6 +282,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
     async def list_metadata(
         self,
         keyword: str | None = None,
+        advanced_filter: ColumnElement[bool] | None = None,
         offset: int = 0,
         limit: int = 20,
         sort_by: MetadataSortField = MetadataSortField.UPDATED_AT,
@@ -300,14 +305,16 @@ class MetadataRepoMixin(RepositoryMixinBase):
         ids: Sequence[int] | None = None,
         id_subquery_sql: str | None = None,
         updated_before: datetime | None = None,
+        execution_deadline: float | None = None,
     ) -> tuple[list[Metadata], int]:
         """关联类 facet 同 kind 多 id 为 AND; 标量类同 kind 多 id 为 OR (未知 id 忽略, 全部未知则空).
         跨 kind 始终 AND. 相位筛选项: 布尔 True=至少一份具备, False=没有任何一份具备.
         """
-        async with self._session() as session:
+        async with self._session() as session, sqlite_query_budget(session, execution_deadline):
             conditions = await self._metadata_filter_conditions(
                 session,
                 keyword=keyword,
+                advanced_filter=advanced_filter,
                 actor_ids=actor_ids,
                 director_ids=director_ids,
                 tag_ids=tag_ids,
@@ -347,6 +354,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
         self,
         *,
         keyword: str | None = None,
+        advanced_filter: ColumnElement[bool] | None = None,
         actor_ids: Sequence[int] | None = None,
         director_ids: Sequence[int] | None = None,
         tag_ids: Sequence[int] | None = None,
@@ -365,12 +373,15 @@ class MetadataRepoMixin(RepositoryMixinBase):
         ids: Sequence[int] | None = None,
         id_subquery_sql: str | None = None,
         updated_before: datetime | None = None,
+        id_limit: int | None = None,
+        execution_deadline: float | None = None,
     ) -> list[int]:
-        """与 :meth:`list_metadata` 同一套筛选, 只取 id; 供语义检索先收窄候选集."""
-        async with self._session() as session:
+        """与 list_metadata 同一套筛选, 只取 id; 供语义检索先收窄候选集."""
+        async with self._session() as session, sqlite_query_budget(session, execution_deadline):
             conditions = await self._metadata_filter_conditions(
                 session,
                 keyword=keyword,
+                advanced_filter=advanced_filter,
                 actor_ids=actor_ids,
                 director_ids=director_ids,
                 tag_ids=tag_ids,
@@ -395,6 +406,8 @@ class MetadataRepoMixin(RepositoryMixinBase):
             stmt = select(col(Metadata.id))
             for condition in conditions:
                 stmt = stmt.where(condition)
+            if id_limit is not None:
+                stmt = stmt.limit(id_limit)
             return [row for row in (await session.exec(stmt)).all() if row is not None]
 
     async def get_metadata(self, metadata_id: int) -> Metadata | None:
