@@ -48,6 +48,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
 
+from ...agent.reasoning import EmbeddedThinkingRows
 from ...agent.rows import (
     AguiEventRow,
     ApprovalsRow,
@@ -58,6 +59,7 @@ from ...agent.rows import (
     TextDeltaRow,
     ToolCallRow,
     ToolResultRow,
+    TraceRow,
     TurnUsageRow,
     UiRow,
     UserMessageRow,
@@ -235,11 +237,23 @@ async def _follow_agui(store: SessionStore, after: int) -> AsyncIterator[str]:
 
 
 async def _follow_rows(store: SessionStore, after: int) -> AsyncIterator[str]:
-    """同上, 但发页面契约的行: 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件."""
-    async for row in store.follow(after):
-        if isinstance(row, AguiEventRow):
-            continue
+    """同上, 但发页面契约的行: 页面据此重建气泡与工具卡片, 不认 AG-UI 协议事件.
+
+    与 `/trace` 过同一遍切分, 直播与回放因此同形.
+    """
+    async for row in _ui_rows(store.follow(after)):
         yield _sse(row.model_dump(mode="json", by_alias=True))
+
+
+async def _ui_rows(rows: AsyncIterator[TraceRow]) -> AsyncIterator[UiRow]:
+    """滤掉协议透传行 (只在 POST 通道分发) 并做正文切分, 与 `/trace` 同一套规则."""
+    rewriter = EmbeddedThinkingRows()
+    async for row in rows:
+        if not isinstance(row, AguiEventRow):
+            for out in rewriter.feed(row):
+                yield out
+    for out in rewriter.close():
+        yield out
 
 
 # 未设置 response_class 时, FastAPI 会按 default_response_class 追加一条 application/json 声明,
