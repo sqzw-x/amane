@@ -6,8 +6,25 @@
 import pytest
 from parsel import Selector
 
-from amane.crawlers.sites.dmm import DmmCrawler, _extrafanart_urls
+from amane.crawlers.sites.dmm import DmmCrawler, _digital_release_date, _extrafanart_urls
 from amane.crawlers.sites.dmm_cdn import image_candidates, poster_candidates
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-10-22T15:00:00Z", "2026-10-23"),
+        ("2025-12-31T15:00:00Z", "2026-01-01"),
+        ("2023-10-19T01:00:00Z", "2023-10-19"),
+        ("2026-10-23T00:00:00+09:00", "2026-10-23"),
+        ("2026-10-23T00:00:00", "2026-10-23"),
+        ("2026-10-23", "2026-10-23"),
+        ("", None),
+        ("2026-02-30T15:00:00Z", None),
+    ],
+)
+def test_digital_release_date(value: str, expected: str | None) -> None:
+    assert _digital_release_date(value) == expected
 
 
 @pytest.mark.parametrize(
