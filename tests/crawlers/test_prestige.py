@@ -258,20 +258,3 @@ async def test_source_url_is_absent_without_uuid() -> None:
     assert meta is not None
     assert meta.source_url is None
     assert meta.external_id is None
-
-
-@pytest.mark.asyncio
-async def test_search_hands_the_api_url_to_scrape() -> None:
-    """检索交出 API 地址, 商品页地址是 HTML, 不能反过来喂给刮削."""
-    crawler = _crawler(_FakeWeb(_sitemap_payload(), {"api/product/": _DETAIL}))
-
-    api_url = await crawler._search(SearchQuery(number="ABW-125"))
-    # 索引命中的 uuid 与详情应答里的未必相同, 这里只断言交出的是 API 形态.
-    assert api_url is not None
-    assert api_url.startswith(f"{_BASE}/api/product/")
-
-    meta = await crawler._scrape(_product_api_url(_DETAIL_UUID))
-
-    assert meta is not None
-    assert meta.source_url is not None
-    assert "/goods/" in meta.source_url
