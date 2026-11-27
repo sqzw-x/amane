@@ -397,4 +397,6 @@ async def test_agent_executes_parallel_tool_calls_without_ids() -> None:
             async for _ in stream.stream_text(delta=True):
                 pass
 
-    assert executed == [("alpha", {"x": 1}), ("beta", {"y": 2})]
+    # 工具在线程池里并行执行, 先后顺序是调度结果而不是约定; 这里只验证两个调用都执行且参数正确.
+    assert len(executed) == 2
+    assert sorted(executed) == [("alpha", {"x": 1}), ("beta", {"y": 2})]
