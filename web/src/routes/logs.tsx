@@ -20,6 +20,7 @@ import { APP_SHELL_MAIN_HEIGHT } from "@/components/layout/app-shell-metrics";
 import { exhaustiveRecord } from "@/lib/exhaustive";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { LogKvPairs } from "@/components/log/log-kv";
+import { LogRowBreak } from "@/components/log/log-row-break";
 import { LogTimestamp } from "@/components/log/log-timestamp";
 import {
   LOG_LEVELS,
@@ -128,6 +129,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
         {entry.level}
       </Badge>
       <Text
+        component="span"
         size="xs"
         c="dimmed"
         ff="monospace"
@@ -137,12 +139,13 @@ function LogRow({ entry }: { entry: LogEntry }) {
       >
         {entry.source}
       </Text>
-      <Text size="sm" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
+      <Text component="span" size="sm" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
         <Text component="span" fw={700}>
           {entry.message}
         </Text>
         <LogKvPairs entry={entry} />
       </Text>
+      <LogRowBreak />
     </Group>
   );
 }
