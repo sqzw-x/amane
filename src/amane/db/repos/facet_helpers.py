@@ -1,13 +1,13 @@
 """无前缀名为包内公开 API; 不经 ``amane.db.repos`` 导出面暴露."""
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import bindparam, literal, or_, update
+from sqlalchemy import and_, bindparam, literal, or_, tuple_, update
 from sqlalchemy import delete as sqla_delete
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, aliased
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -20,10 +20,14 @@ from ..actor_person import locked_fields_of, merge_person_fields_into_target
 from ..facet_rules import (
     FacetFieldValues,
     RuleEntry,
+    RuleRow,
     RulesByKind,
     apply_metadata_facet_fields,
     empty_rules_by_kind,
+    facet_field_values,
     resolve_name,
+    rule_lookup_names,
+    rules_from_rows,
 )
 from ..models import (
     FAVORITE_FACET_ENTITIES,
@@ -608,17 +612,59 @@ def _is_in_place_rename(
     )
 
 
-async def load_rules_by_kind(session: AsyncSession) -> dict[FacetKind, dict[str, RuleEntry]]:
-    """一次读入全部治理规则; 调用方在循环外读好传给规则应用函数, 不在逐行路径上重读."""
+async def load_all_rules(session: AsyncSession) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """全表读取治理规则.
+
+    只有批量治理 (改名 / 合并 / 删除) 用它: 它们要按任意旧名反查入边, 候选名无法预先枚举.
+    条目写入与刮削取值走 ``load_rules_for_names``, 代价与规则表规模无关.
+    """
     out = empty_rules_by_kind()
-    rows = list((await session.exec(select(FacetRule))).all())
-    for row in rows:
+    rows: list[RuleRow] = []
+    for row in (await session.exec(select(FacetRule))).all():
         kind = row.kind if isinstance(row.kind, FacetKind) else FacetKind(row.kind)
-        if kind not in SCRAPE_FACET_KINDS:
-            continue
-        action = row.action if isinstance(row.action, FacetRuleAction) else FacetRuleAction(row.action)
-        out[kind][row.source_name] = RuleEntry(action=action, target_name=row.target_name)
+        rows.append((kind, row.source_name, row.action, row.target_name, None))
+    for kind, rules in rules_from_rows(rows).items():
+        out[kind].update(rules)
     return out
+
+
+async def load_rules_for_names(
+    session: AsyncSession, names: Mapping[FacetKind, Collection[str]]
+) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """按候选名定向读取治理规则; 一次刮削一次查询判完单跳.
+
+    ``(kind, source_name)`` 的唯一索引让代价只随候选名个数增长, 与规则表规模无关.
+    外连接把 alias 目标的 action 一并取回, 目标被 block 的别名在结果里直接收敛为 block.
+    候选名超过一条语句的绑定上限时才分批.
+    """
+    out = empty_rules_by_kind()
+    pairs = [(kind, name) for kind, found in names.items() for name in sorted(set(found))]
+    target = aliased(FacetRule)
+    for batch in chunks(pairs):
+        # 命中行连同 alias 目标行的 action 一起取回; 目标行不存在时该列为 None.
+        stmt = (
+            select(FacetRule, col(target.action).label("target_action"))
+            .outerjoin(
+                target,
+                and_(col(target.kind) == col(FacetRule.kind), col(target.source_name) == col(FacetRule.target_name)),
+            )
+            .where(tuple_(col(FacetRule.kind), col(FacetRule.source_name)).in_([(k, n) for k, n in batch]))
+        )
+        rows: list[RuleRow] = [
+            (rule.kind, rule.source_name, rule.action, rule.target_name, target_action)
+            for rule, target_action in (await session.exec(stmt)).all()
+        ]
+        for row_kind, rules in rules_from_rows(rows).items():
+            out[row_kind].update(rules)
+    return out
+
+
+async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """按这一行当前的六个分类取值定向读取规则 (含演员别名拆分后的展示名).
+
+    写路径只折叠本行实际出现的名字, 代价不随规则表规模增长.
+    """
+    return await load_rules_for_names(session, rule_lookup_names(facet_field_values(meta)))
 
 
 async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata, rules_by_kind: RulesByKind) -> None:
@@ -1028,13 +1074,17 @@ async def clean_actor_names(
     须在 ``apply_facet_rules_to_metadata`` 之前运行. block 在解析前查原始名、解析后查展示名.
     名单不变时不改 ``Metadata.actors``. ``Actor.gender`` 为 ``unknown`` 且入参给出
     ``female`` / ``male`` 时填空; 不覆盖已有性别, 不写入 ``field_sources``; 性别已锁则跳过.
-    别名并入同样跳过别名已锁的演员. ``rules_by_kind`` 省略时现读规则表 (调用方已读好则复用).
+    别名并入同样跳过别名已锁的演员.
+
+    ``rules_by_kind`` 是调用方按本行候选名定向读取的规则, 须覆盖原始名与解析后的展示名
+    (见 ``facet_rules.rule_lookup_names``): 这里要先把别名拆开才能查到展示名, 因而无法只凭入参
+    名预读. 省略时退回全表读取, 仅限规则表规模可控的调用方.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
         return
     genders = actor_genders or {}
-    rules = rules_by_kind if rules_by_kind is not None else await load_rules_by_kind(session)
+    rules = rules_by_kind if rules_by_kind is not None else await load_rules_for_row(session, meta)
     actor_rules = rules.get(FacetKind.ACTOR, {})
     seen: set[str] = set()
     canonical: list[str] = []
@@ -1229,7 +1279,7 @@ async def rename_link_facet(
         session.add(entity)
         await session.flush()
         if spec.get_names is not None:
-            rules_by_kind = await load_rules_by_kind(session)
+            rules_by_kind = await load_all_rules(session)
             loaded = await _load_linked_facet_values(session, spec, [facet_id])
             await _rewrite_renamed_metadata(session, spec, loaded, old_name, new_name, rules_by_kind)
     return await get_facet(session, spec.kind, facet_id)
@@ -1297,7 +1347,7 @@ async def merge_link_facets(
     elif spec.kind in SCRAPE_FACET_KINDS:
         for source_name in sorted(source_names):
             await _upsert_alias(session, spec.kind, source_name, target.name)
-    rules_by_kind = await load_rules_by_kind(session)
+    rules_by_kind = await load_all_rules(session)
     loaded = await _load_linked_facet_values(session, spec, sorted(source_id_set))
     rewrites: list[tuple[int, FacetFieldValues, FacetFieldValues]] = []
     final_names: list[tuple[int, list[str]]] = []

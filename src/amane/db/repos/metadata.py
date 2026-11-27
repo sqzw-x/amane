@@ -15,8 +15,10 @@ from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
+from ..facet_rules import RuleEntry
 from ..models import (
     Comment,
+    FacetKind,
     MediaFile,
     Metadata,
     MetadataActor,
@@ -46,7 +48,8 @@ from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
-    load_rules_by_kind,
+    load_rules_for_names,
+    load_rules_for_row,
     resolve_scalar_facet_names,
     sync_metadata_facets,
 )
@@ -430,6 +433,16 @@ class MetadataRepoMixin(RepositoryMixinBase):
             rows = (await session.exec(stmt)).all()
             return {row_id: content_type for row_id, content_type in rows if row_id is not None}
 
+    async def load_rules_for_names(
+        self, names: Mapping[FacetKind, Sequence[str]]
+    ) -> dict[FacetKind, dict[str, RuleEntry]]:
+        """按候选名定向读取治理规则; 刮削在取值前用它折叠分类字段.
+
+        只读且只查本次出现的名字, 代价与规则表规模无关.
+        """
+        async with self._session() as session:
+            return await load_rules_for_names(session, names)
+
     async def upsert_metadata(
         self,
         number: str,
@@ -452,7 +465,6 @@ class MetadataRepoMixin(RepositoryMixinBase):
             # pysqlite 只在 DML 之前发出 BEGIN, 查号落在事务之外时并发同号写入会双双判定为「无行」,
             # 后者在插入时违反 ix_metadata_number. 手工取得写锁后判定与写入同处一个事务.
             await acquire_write_lock(session)
-            rules_by_kind = await load_rules_by_kind(session)
             stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             existing = result.first()
@@ -466,6 +478,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
+                rules_by_kind = await load_rules_for_row(session, existing)
                 await clean_actor_names(session, existing, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, existing, rules_by_kind)
                 await sync_metadata_facets(session, existing)
@@ -478,6 +491,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
                 session.add(meta)
                 await session.flush()
+                rules_by_kind = await load_rules_for_row(session, meta)
                 await clean_actor_names(session, meta, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
                 await sync_metadata_facets(session, meta)
@@ -505,7 +519,6 @@ class MetadataRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             # 读改写须同事务: 锁定集合合并、投影重建都依据本次读到的值, 见 docs/dev/database.md.
             await acquire_write_lock(session)
-            rules_by_kind = await load_rules_by_kind(session)
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
@@ -558,6 +571,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
+            rules_by_kind = await load_rules_for_row(session, metadata)
             await clean_actor_names(session, metadata, actor_genders, rules_by_kind)
             await apply_facet_rules_to_metadata(session, metadata, rules_by_kind)
             await sync_metadata_facets(session, metadata)

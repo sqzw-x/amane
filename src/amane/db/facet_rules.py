@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from ..crawlers.models import FilmActor, MediaMetadata
+from ..enums import MetadataField
+from ..parsing import split_actor_aliases
 from .models import SCRAPE_FACET_KINDS, FacetKind, FacetRuleAction, Metadata
 
 
@@ -152,5 +155,87 @@ def apply_metadata_facet_fields(meta: Metadata, rules_by_kind: RulesByKind) -> N
     write_facet_field_values(meta, facet_field_values(meta).apply_rules(rules_by_kind))
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedField:
+    """一次来源结果按规则收敛后的取值; 三类互斥, 只有对应字段用得上的一项."""
+
+    value: str | None = None
+    actors: list[FilmActor] | None = None
+    names: list[str] | None = None
+
+    @property
+    def empty(self) -> bool:
+        """没有可写入的值; 调用方据此继续沿字段链回退."""
+        return not (self.value or self.actors or self.names)
+
+
+def resolve_field_value(field: MetadataField, data: MediaMetadata, rules_by_kind: RulesByKind) -> ResolvedField:
+    """按治理规则收敛一次来源结果的某个分类字段.
+
+    非分类字段原样返回. 多值字段整份剔除后为空, 与站点没给值同样继续回退; 部分保留不触发回退.
+    演员只按名单剔除, 性别随条目保留.
+    """
+    match field:
+        case MetadataField.ACTORS:
+            rules = rules_by_kind.get(FacetKind.ACTOR, {})
+            return ResolvedField(actors=[item for item in data.actors if resolve_name(item.name, rules) is not None])
+        case MetadataField.DIRECTORS:
+            return ResolvedField(names=apply_list(list(data.directors), rules_by_kind.get(FacetKind.DIRECTOR, {})))
+        case MetadataField.TAGS:
+            return ResolvedField(names=apply_list(list(data.tags), rules_by_kind.get(FacetKind.TAG, {})))
+        case MetadataField.SERIES:
+            return ResolvedField(value=apply_scalar(data.series, rules_by_kind.get(FacetKind.SERIES, {})))
+        case MetadataField.STUDIO:
+            return ResolvedField(value=apply_scalar(data.studio, rules_by_kind.get(FacetKind.STUDIO, {})))
+        case MetadataField.PUBLISHER:
+            return ResolvedField(value=apply_scalar(data.publisher, rules_by_kind.get(FacetKind.PUBLISHER, {})))
+        case _:
+            return ResolvedField(value=getattr(data, field, None))
+
+
 def empty_rules_by_kind() -> dict[FacetKind, dict[str, RuleEntry]]:
     return {kind: {} for kind in SCRAPE_FACET_KINDS}
+
+
+def rule_lookup_names(values: FacetFieldValues) -> dict[FacetKind, set[str]]:
+    """六个真值字段在规则表里可能命中的名字, 按 kind 分组.
+
+    演员同时给出原始名与 ``name(alias1, alias2)`` 拆出的展示名: 落库前先按原始名判一次 block,
+    再按解析出的展示名判一次, 两次都在查找范围内.
+    """
+    names: dict[FacetKind, set[str]] = {kind: set() for kind in SCRAPE_FACET_KINDS}
+    names[FacetKind.ACTOR] = {
+        candidate for raw in values.actors if raw for candidate in (raw, split_actor_aliases(raw)[0])
+    }
+    names[FacetKind.DIRECTOR].update(values.directors)
+    names[FacetKind.TAG].update(values.tags)
+    for kind, value in (
+        (FacetKind.STUDIO, values.studio),
+        (FacetKind.PUBLISHER, values.publisher),
+        (FacetKind.SERIES, values.series),
+    ):
+        if value:
+            names[kind].add(value)
+    return {kind: found for kind, found in names.items() if found}
+
+
+type RuleRow = tuple[FacetKind, str, FacetRuleAction, str | None, FacetRuleAction | None]
+
+
+def rules_from_rows(rows: Iterable[RuleRow]) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """定向查询结果转成规则表. 每行是 (kind, source_name, action, target_name, target_action).
+
+    target_action 是 alias 目标的 action (目标行不存在时为 None), 因此单跳在同一次查询内判完:
+    目标被 block 的别名与目标不存在同样收敛为空, 见 ``resolve_name``.
+    """
+    by_kind = empty_rules_by_kind()
+    for kind, source_name, action, target_name, target_action in rows:
+        if kind not in SCRAPE_FACET_KINDS:
+            continue
+        resolved = FacetRuleAction(action)
+        if resolved == FacetRuleAction.ALIAS and target_action == FacetRuleAction.BLOCK:
+            resolved = FacetRuleAction.BLOCK
+        by_kind[kind][source_name] = RuleEntry(
+            action=resolved, target_name=None if resolved == FacetRuleAction.BLOCK else target_name
+        )
+    return by_kind

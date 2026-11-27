@@ -12,6 +12,7 @@ from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
     Actor,
     FacetKind,
+    FacetRule,
     FacetRuleAction,
     MediaFile,
     MediaFileStatus,
@@ -1686,6 +1687,49 @@ class TestActorLocks:
         await repo.upsert_metadata(number="AL-alias-1", actors=["AliasFrozen(站点名)"])
 
         assert await repo.get_actor_aliases(actor.id) == ["手填"]
+
+    @staticmethod
+    async def _rule(repo: Repository, kind: FacetKind, source: str, action: FacetRuleAction, target: str | None = None):
+        async with repo._session() as session:
+            session.add(FacetRule(kind=kind, source_name=source, action=action, target_name=target))
+            await session.commit()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_block_rule(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-1", series="被剔除")
+
+        assert meta.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_alias_and_blocked_target(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "别名", FacetRuleAction.ALIAS, "正式")
+        aliased = await repo.upsert_metadata(number="TGT-2", series="别名")
+        assert aliased.series == "正式"
+
+        await self._rule(repo, FacetKind.SERIES, "正式", FacetRuleAction.BLOCK)
+        blocked = await repo.upsert_metadata(number="TGT-3", series="别名")
+        assert blocked.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_split_alias_is_blocked(self, repo: Repository):
+        """候选名覆盖 name(alias) 拆出的展示名, 否则清洗阶段的 block 会漏查."""
+        await self._rule(repo, FacetKind.ACTOR, "废名", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-4", actors=["废名(别名)"])
+
+        assert meta.actors == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_metadata_applies_block_rule(self, repo: Repository):
+        meta = await repo.upsert_metadata(number="TGT-5", series="保留")
+        assert meta.id is not None
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        updated = await repo.update_metadata(meta.id, series="被剔除")
+
+        assert updated is not None and updated.series is None
 
     @pytest.mark.asyncio(loop_scope="function")
     async def test_save_actor_skips_locked_aliases(self, repo: Repository):

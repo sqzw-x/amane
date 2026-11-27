@@ -3,10 +3,19 @@ from typing import TYPE_CHECKING, Protocol
 
 from structlog.contextvars import bind_contextvars
 
-from ..aggregate import SCALAR_FIELDS, AggregatedMetadata, CrawlerLike, FieldLanguage, aggregate, compile_priority
+from ..aggregate import (
+    SCALAR_FIELDS,
+    AggregatedMetadata,
+    CrawlerLike,
+    FieldLanguage,
+    RuleQuery,
+    aggregate,
+    compile_priority,
+)
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import builtin_descriptors
-from ..db.models import TaskType
+from ..db.facet_rules import RuleEntry
+from ..db.models import FacetKind, TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
@@ -121,6 +130,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             on_progress=_on_fetch_progress,
             multi_lang_sites=self._multi_language_sources,
             deferred_sites=frozenset(name for name in crawlers if name in self._partial_sources),
+            load_rules=self._load_rules,
         )
 
         # 站点结果已由引擎 _fetch_one 逐条上报到 summary.outcomes; 这里只记录调度顺序.
@@ -231,6 +241,17 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             ),
             followups=[*actor_followups, *organize_followups],
         )
+
+    async def _load_rules(self, names: RuleQuery) -> dict[FacetKind, dict[str, RuleEntry]] | None:
+        """按本次候选名取治理规则, 供聚合在取值前折叠分类字段.
+
+        读取失败不阻断刮削: 拿不到规则时按未收敛的取值继续, 落库时仍会执行一次规则.
+        """
+        try:
+            return await self._repo.load_rules_for_names(names)
+        except Exception:
+            current().warning("facet rules unavailable, resolving without rules", kinds=sorted(str(k) for k in names))
+            return None
 
     def failure_result(self, payload: ScrapePayload) -> ScrapeResult | None:
         """抓取之后崩掉时, 站点明细仍要能回答"为什么刮不到"."""
