@@ -151,16 +151,10 @@ def preferred_sku(sku_ids: Iterable[str]) -> str | None:
     """多个 SKU 中优先级最高的那个 SKU 本身 (不剥离前缀); 无 SKU 时为 ``None``.
 
     商品详情页按 SKU 定位, 而站点售卖的常是同捆特典 SKU (``TKTABW-125``), 裸番号未必在售.
-    取舍键只有 ``rank_sku`` 一份, ``preferred_number`` 由它派生.
+    取舍键只有 ``rank_sku`` 一份; 番号由 ``strip_sku_prefix`` 从它剥出.
     """
     candidates = [sku_id for sku_id in sku_ids if sku_id]
     return min(candidates, key=rank_sku) if candidates else None
-
-
-def preferred_number(sku_ids: Iterable[str]) -> str | None:
-    """多个 SKU 中优先级最高的那个的番号: 裸番号优先, 其后按前缀顺序; 无 SKU 时为 ``None``."""
-    sku_id = preferred_sku(sku_ids)
-    return strip_sku_prefix(sku_id) if sku_id is not None else None
 
 
 def build_index(entries: Sequence[SitemapEntry]) -> SitemapIndex:

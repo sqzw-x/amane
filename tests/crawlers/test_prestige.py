@@ -15,7 +15,7 @@ from amane.crawlers.sites.prestige import (
     SitemapUnusable,
     SkuPrefix,
     parse_sitemap,
-    preferred_number,
+    preferred_sku,
     rank_sku,
     strip_sku_prefix,
 )
@@ -106,18 +106,21 @@ def test_strip_sku_prefix_keeps_non_prefixed_ids(sku_id: str, expected: str) -> 
 
 
 # 无裸番号时按声明顺序: TKT 在 GOOE 之前, 尽管 GOOE 的写法更靠前. 「裸番号优先」由 TOML 用例覆盖.
+# 详情番号 = 取最优 SKU 再剥前缀, 与 _scrape 同一条路径, 因此两档都断言这两个生产函数.
 @pytest.mark.parametrize(
-    ("sku_ids", "expected"),
+    ("sku_ids", "expected_sku", "expected_number"),
     [
-        (["GOOEABF-001", "TKTABF-001"], "ABF-001"),
-        (["TKTABP-546"], "ABP-546"),
-        ([], None),
-        (["", ""], None),
+        (["GOOEABF-001", "TKTABF-001"], "TKTABF-001", "ABF-001"),
+        (["TKTABP-546"], "TKTABP-546", "ABP-546"),
+        ([], None, None),
+        (["", ""], None, None),
     ],
 )
-def test_preferred_number(sku_ids: list[str], expected: str | None) -> None:
-    assert preferred_number(sku_ids) == expected
-    # 取舍键是单一真源 (检索归并与详情番号共用), 在全部七个前缀上单调: 裸番号在前, 其后按声明顺序.
+def test_preferred_sku_and_number(sku_ids: list[str], expected_sku: str | None, expected_number: str | None) -> None:
+    sku_id = preferred_sku(sku_ids)
+    assert sku_id == expected_sku
+    assert (strip_sku_prefix(sku_id) if sku_id is not None else None) == expected_number
+    # 取舍键是单一真源 (检索归并与详情同用), 在全部七个前缀上单调: 裸番号在前, 其后按声明顺序.
     shuffled = [*(f"{prefix.value}ABF-084" for prefix in reversed(list(SkuPrefix))), "ABF-084"]
     assert sorted(shuffled, key=rank_sku) == ["ABF-084", *(f"{prefix.value}ABF-084" for prefix in SkuPrefix)]
 
