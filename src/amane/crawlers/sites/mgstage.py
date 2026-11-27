@@ -88,7 +88,7 @@ class IndexResult:
 
 
 def _decode(payload: bytes) -> bytes:
-    """分片按 ``application/x-gzip`` 原样下发; 也收已解压的正文 (缓存读回与夹具给的是解压后的)."""
+    """分片按 ``application/x-gzip`` 原样下发; 也收已解压的正文 (夹具给的是解压后的)."""
     if payload[:2] == b"\x1f\x8b":
         try:
             return gzip.decompress(payload)
@@ -106,7 +106,7 @@ def parse_catalog(payloads: Sequence[bytes]) -> CatalogIndex:
     """若干目录分片 → 索引.
 
     正文不是 sitemap (拦截页 / 首页 / 损坏的分片) 时抛 ``CatalogUnusable``, 调用方降级到下一档.
-    正文是 sitemap 但一个带数字段的番号都没有时返回空索引: 那是「目录里没有这类番号」, 不是失败.
+    正文是 sitemap 但没有任何 product_detail 条目时返回空索引: 那是「目录里没有番号」, 不是失败.
     """
     if not payloads:
         raise CatalogUnusable("no sitemap shard")

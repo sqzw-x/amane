@@ -138,6 +138,8 @@ class _FakeWeb:
     """假 WebClient: 目录正文 + 请求计数.
 
     ``driven.build_mock`` 按夹具文件装配且每条路由恒定应答, 判不了「有没有再请求一次」, 因此这里自己数.
+    计数前先 ``sleep(0)`` 让出控制权: 不让出的话所有并发调用都撞在同一个 await 之前, 计数恒为 1,
+    即使去掉 ``_index_lock`` 也照绿, 测试就验不出任何东西.
     """
 
     def __init__(self, shard: bytes | Exception) -> None:
@@ -146,6 +148,7 @@ class _FakeWeb:
 
     async def get_bytes(self, url: str, **kwargs: object) -> bytes:
         self.sitemap_calls += 1
+        await asyncio.sleep(0)
         if isinstance(self._shard, Exception):
             raise self._shard
         return self._shard
@@ -161,7 +164,11 @@ async def test_index_backoff_skips_refetch_until_due() -> None:
     web = _FakeWeb(_index_down())
     crawler = _crawler(web)
     await asyncio.gather(*(crawler._from_index("STKO-005") for _ in range(3)))
-    # 首个分片就失败即不再试余下两份; 关键在于三个并发检索只换来这一轮拉取.
+    # 首个分片就失败即不再试余下两份, 三个并发检索只换来这一轮拉取.
+    assert web.sitemap_calls == 1
+
+    # 退避期内再来一次同样不请求: 这条才是「退避」与「并发只拉一次」的区别所在.
+    await crawler._from_index("STKO-005")
     assert web.sitemap_calls == 1
 
 
