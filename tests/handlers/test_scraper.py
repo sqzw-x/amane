@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from amane.db.repository import Repository
+    from amane.media import ResourceStore
 
 # --- 辅助类 ---
 
@@ -1163,12 +1164,16 @@ def _blocked(site: str) -> RequestError:
     return RequestError(f"https://{site}.example", failure)
 
 
-def _stills_handler(site_order: list[SiteName], crawlers: dict[str, _StillsCrawler], **kwargs: object):
+def _stills_handler(
+    site_order: list[SiteName], crawlers: dict[str, _StillsCrawler], *, repo: Repository, resource_store: ResourceStore
+) -> ScrapeHandler:
     config = _config_with(
         {ContentType.CENSORED: [SiteName.DMM, SiteName.OFFICIAL, SiteName.JAVDB, SiteName.JAVBUS]},
         {MetadataField.EXTRAFANART: site_order},
     )
-    return ScrapeHandler(factory=RecordingFactory(crawlers), pipeline_config=config, **kwargs)
+    return ScrapeHandler(
+        repo=repo, factory=RecordingFactory(crawlers), resource_store=resource_store, pipeline_config=config
+    )
 
 
 class TestStillsPriorityOnRescrape:
@@ -1196,8 +1201,7 @@ class TestStillsPriorityOnRescrape:
         self, repo: Repository, resource_store, use_cache: set[CacheKind] | None, failing: SiteName | None
     ):
         crawlers = {"dmm": _StillsCrawler(_stills("dmm")), "official": _StillsCrawler(_stills("official"))}
-        common = {"repo": repo, "resource_store": resource_store}
-        await _stills_handler([SiteName.DMM], crawlers, **common).handle(
+        await _stills_handler([SiteName.DMM], crawlers, repo=repo, resource_store=resource_store).handle(
             ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
         )
 
@@ -1207,12 +1211,10 @@ class TestStillsPriorityOnRescrape:
 
         if failing is not None:
             crawlers[str(failing)] = _StillsCrawler([], _blocked(str(failing)))
-        payload = ScrapePayload(
-            number="IPZZ-003",
-            content_type=ContentType.CENSORED,
-            **({} if use_cache is None else {"use_cache": use_cache}),
-        )
-        await _stills_handler([SiteName.OFFICIAL], crawlers, **common).handle(payload)
+        payload = ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
+        if use_cache is not None:
+            payload.use_cache = use_cache
+        await _stills_handler([SiteName.OFFICIAL], crawlers, repo=repo, resource_store=resource_store).handle(payload)
 
         reloaded = await repo.get_metadata_by_number("IPZZ-003")
         assert reloaded is not None
@@ -1222,11 +1224,10 @@ class TestStillsPriorityOnRescrape:
     async def test_priority_without_new_data_keeps_previous_site(self, repo: Repository, resource_store):
         """新首站在本次刮削没有剧照时不能凭空清空: 聚合只收有值的站点, 旧站排到次位."""
         crawlers = {"dmm": _StillsCrawler(_stills("dmm")), "official": _StillsCrawler([])}
-        common = {"repo": repo, "resource_store": resource_store}
-        await _stills_handler([SiteName.DMM], crawlers, **common).handle(
+        await _stills_handler([SiteName.DMM], crawlers, repo=repo, resource_store=resource_store).handle(
             ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
         )
-        await _stills_handler([SiteName.OFFICIAL], crawlers, **common).handle(
+        await _stills_handler([SiteName.OFFICIAL], crawlers, repo=repo, resource_store=resource_store).handle(
             ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
         )
 
