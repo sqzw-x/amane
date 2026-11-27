@@ -316,7 +316,10 @@ def parse_file_info(
         cd = _detect_cd(basename)
         if cd is None and dirs:
             cd = _detect_cd_from_parent(dirs[-1])
-        mosaic = _detect_mosaic(basename) or _detect_mosaic_from_dirs(dirs)
+        mosaic = _detect_mosaic(basename)
+        if mosaic is None and content_type == ContentType.CENSORED:
+            mosaic = _detect_restored_mosaic(basename, number, escape)
+        mosaic = mosaic or _detect_mosaic_from_dirs(dirs)
     else:
         # 文本: 只执行番号规则; 未命中则 number 为 None, 相位只依据该字符串.
         assert text is not None
@@ -729,6 +732,14 @@ def _detect_mosaic(basename: str) -> Mosaic | None:
         return Mosaic.LEAKED
     if re.search(r"無碼|无码|UNCENSORED", basename):
         return Mosaic.UNCENSORED
+    return None
+
+
+def _detect_restored_mosaic(basename: str, number: str | None, escape: list[str]) -> Mosaic | None:
+    """版本标记前的文件名须能独立识别出同一有码番号."""
+    for marker in re.finditer(r"(?<![A-Z0-9])RESTORED(?![A-Z0-9])", basename):
+        if _match(basename[: marker.start()], escape, generic=False) == (number, ContentType.CENSORED):
+            return Mosaic.CRACKED
     return None
 
 
