@@ -500,6 +500,20 @@ class TestOrderedMappingColumns:
         assert reloaded.score == 80.0
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_key_order_change_triggers_media_hook(self, repo: Repository):
+        """键序参与真值: 语义索引只取第一个有落盘图片的站点, 换首站必须重算向量."""
+        hook = _RecordingMediaHook()
+        repo.set_media_hook(hook)
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"dmm": ["d/1"], "official": ["o/1"]})
+        assert entry.id is not None
+        # 插入本身就该通知一次, 清掉后才看得出「只有顺序变了」是否触发.
+        hook.changed.clear()
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"], "dmm": ["d/1"]})
+
+        assert hook.changed == [entry.id]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_same_order_does_not_trigger_media_hook(self, repo: Repository):
         """顺序没变时图片签名不变, 不得把每次刮削都变成一次语义索引重建."""
         hook = _RecordingMediaHook()

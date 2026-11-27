@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
@@ -65,22 +65,33 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     return {**fields, "plot": normalize_long_text(plot)}
 
 
-def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
-    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
-    return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
+def _image_signature(
+    metadata: Metadata,
+) -> tuple[list[str], list[str], list[tuple[str, list[str]]]]:
+    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入).
+
+    剧照按站点分组且首站即取值, 语义索引只取第一个有落盘图片的站点
+    (见 ``semantic/service.py::_resolve_images``), 因此键序参与真值, 比较不能交给 dict 的 ``==``.
+    """
+    return (metadata.poster_urls, metadata.thumb_urls, list(metadata.extrafanart_urls.items()))
+
+
+def _flag_ordered(instance: Metadata, keys: Iterable[str]) -> None:
+    """让顺序敏感列的键序变化触发 UPDATE.
+
+    SQLAlchemy 判列是否变化用 ``==``, 而 dict 相等不看顺序; 首项即取值的列 (``_ORDERED_MAPPING_COLUMNS``)
+    因此必须显式标脏, 否则改了字段优先级重新刮削仍读到旧的首站.
+    """
+    for key in keys:
+        if key in _ORDERED_MAPPING_COLUMNS:
+            flag_modified(instance, key)
 
 
 def _write_columns(instance: Metadata, fields: MetadataFields) -> None:
-    """逐列写入, 并让映射类 dict 列的顺序变化同样触发 UPDATE.
-
-    SQLAlchemy 判列是否变化用 ``==``, 而 dict 相等不看顺序; 站点分组列 (``extrafanart_urls`` /
-    ``scores``) 的首站就是取值, 顺序变化必须落库, 否则改了字段优先级重新刮削仍读到旧的首站.
-    """
+    """逐列写入, 再按 ``_ORDERED_MAPPING_COLUMNS`` 标脏."""
     for key, value in fields.items():
         setattr(instance, key, value)
-    for key in fields:
-        if key in _ORDERED_MAPPING_COLUMNS:
-            flag_modified(instance, key)
+    _flag_ordered(instance, fields)
 
 
 def _merge_raw_snapshots(
@@ -531,13 +542,10 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 metadata.thumb_urls = updates["thumb_urls"]
             if "trailer_urls" in updates:
                 metadata.trailer_urls = updates["trailer_urls"]
-            # 首项即取值的映射列: 键序变化在 == 下不算变化, 须显式标脏才会落库.
             if "extrafanart_urls" in updates:
                 metadata.extrafanart_urls = updates["extrafanart_urls"]
-                flag_modified(metadata, "extrafanart_urls")
             if "scores" in updates:
                 metadata.scores = updates["scores"]
-                flag_modified(metadata, "scores")
             if "external_ids" in updates:
                 metadata.external_ids = updates["external_ids"]
             if "source_urls" in updates:
@@ -546,6 +554,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 metadata.field_sources = updates["field_sources"]
             if "raw" in updates:
                 metadata.raw = updates["raw"]
+            _flag_ordered(metadata, updates)
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
