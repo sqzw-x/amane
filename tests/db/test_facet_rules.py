@@ -10,6 +10,7 @@ from amane.db.facet_rules import (
     ResolvedField,
     RuleEntry,
     RuleRow,
+    RuleSet,
     apply_list,
     apply_scalar,
     resolve_field_value,
@@ -203,7 +204,7 @@ class TestResolveFieldValue:
         rules: dict[FacetKind, dict[str, RuleEntry]],
         expected: ResolvedField,
     ) -> None:
-        assert resolve_field_value(field, data, rules) == expected, desc
+        assert resolve_field_value(field, data, RuleSet(rules=rules)) == expected, desc
 
     @pytest.mark.parametrize(
         ("desc", "resolved", "expected"),

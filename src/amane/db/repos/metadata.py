@@ -15,7 +15,7 @@ from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
-from ..facet_rules import RuleEntry
+from ..facet_rules import RuleSet
 from ..models import (
     Comment,
     FacetKind,
@@ -433,12 +433,11 @@ class MetadataRepoMixin(RepositoryMixinBase):
             rows = (await session.exec(stmt)).all()
             return {row_id: content_type for row_id, content_type in rows if row_id is not None}
 
-    async def load_rules_for_names(
-        self, names: Mapping[FacetKind, Sequence[str]]
-    ) -> dict[FacetKind, dict[str, RuleEntry]]:
-        """按候选名定向读取治理规则; 刮削在取值前用它折叠分类字段.
+    async def load_rules_for_names(self, names: Mapping[FacetKind, Sequence[str]]) -> RuleSet:
+        """按候选名定向读取治理数据; 刮削在取值前用它折叠分类字段.
 
-        只读且只查本次出现的名字, 代价与规则表规模无关.
+        规则与别名表的展示名一起返回: 取值期只有拿到后者才能对演员判到与写库期一致的名字.
+        只读且只查本次出现的名字, 代价不随规则表规模增长.
         """
         async with self._session() as session:
             return await load_rules_for_names(session, names)

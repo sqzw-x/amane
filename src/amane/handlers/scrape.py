@@ -14,8 +14,8 @@ from ..aggregate import (
 )
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import builtin_descriptors
-from ..db.facet_rules import RuleEntry
-from ..db.models import FacetKind, TaskType
+from ..db.facet_rules import RuleSet
+from ..db.models import TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
 from ..observability import current
@@ -242,9 +242,10 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             followups=[*actor_followups, *organize_followups],
         )
 
-    async def _load_rules(self, names: RuleQuery) -> dict[FacetKind, dict[str, RuleEntry]] | None:
-        """按本次候选名取治理规则, 供聚合在取值前折叠分类字段.
+    async def _load_rules(self, names: RuleQuery) -> RuleSet | None:
+        """按本次候选名取治理数据, 供聚合在取值前折叠分类字段.
 
+        规则与别名表映射一起取回: 演员被剔除的是展示名, 取值期据此才能与写库期判到同一批名字.
         读取失败只保证取值期不中断: 落库期仍会按本行候选名重读一次, 那一步失败照常让任务失败.
         """
         try:

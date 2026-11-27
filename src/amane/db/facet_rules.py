@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..crawlers.models import FilmActor, MediaMetadata
 from ..enums import MetadataField
@@ -156,6 +156,21 @@ def apply_metadata_facet_fields(meta: Metadata, rules_by_kind: RulesByKind) -> N
 
 
 @dataclass(frozen=True, slots=True)
+class RuleSet:
+    """一次取值需要的治理数据.
+
+    别名表是实体关系而非规则, 但对演员而言它是同一份判定所需的一半: 源站给的是别名,
+    被剔除的是展示名. 由调用方连同规则一起备好, 取值期的纯函数就能判到同一批名字.
+    """
+
+    rules: RulesByKind
+    actor_display: Mapping[str, str] = field(default_factory=dict)
+
+    def empty(self) -> bool:
+        return not self.rules and not self.actor_display
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedField:
     """一次来源结果按规则收敛后的取值; 三类互斥, 只有对应字段用得上的一项."""
 
@@ -169,26 +184,44 @@ class ResolvedField:
         return not (self.value or self.actors or self.names)
 
 
-def resolve_field_value(field: MetadataField, data: MediaMetadata, rules_by_kind: RulesByKind) -> ResolvedField:
-    """按治理规则收敛一次来源结果的某个分类字段.
+def blocked_actor(name: str, actor_rules: RulesBySource, display: Mapping[str, str]) -> bool:
+    """按展示名判 block: 别名表命中时先换成展示名, 再查规则.
+
+    取值期与写库期共用这一条判定, 两处的剔除结论才不会分叉.
+    """
+    if _is_blocked_name(name, actor_rules):
+        return True
+    resolved = display.get(name)
+    return resolved is not None and _is_blocked_name(resolved, actor_rules)
+
+
+def _is_blocked_name(name: str, rules: RulesBySource) -> bool:
+    rule = rules.get(name)
+    return rule is not None and rule.action == FacetRuleAction.BLOCK
+
+
+def resolve_field_value(field: MetadataField, data: MediaMetadata, rules: RuleSet) -> ResolvedField:
+    """按治理数据收敛一次来源结果的某个分类字段.
 
     非分类字段原样返回. 多值字段整份剔除后为空, 与站点没给值同样继续回退; 部分保留不触发回退.
-    演员只按名单剔除, 性别随条目保留.
+    演员先按别名表换成展示名再判, 与写库期同一口径; 性别随条目保留.
     """
+    by_kind = rules.rules
     match field:
         case MetadataField.ACTORS:
-            rules = rules_by_kind.get(FacetKind.ACTOR, {})
-            return ResolvedField(actors=[item for item in data.actors if resolve_name(item.name, rules) is not None])
+            actor_rules = by_kind.get(FacetKind.ACTOR, {})
+            kept = [item for item in data.actors if not blocked_actor(item.name, actor_rules, rules.actor_display)]
+            return ResolvedField(actors=kept)
         case MetadataField.DIRECTORS:
-            return ResolvedField(names=apply_list(list(data.directors), rules_by_kind.get(FacetKind.DIRECTOR, {})))
+            return ResolvedField(names=apply_list(list(data.directors), by_kind.get(FacetKind.DIRECTOR, {})))
         case MetadataField.TAGS:
-            return ResolvedField(names=apply_list(list(data.tags), rules_by_kind.get(FacetKind.TAG, {})))
+            return ResolvedField(names=apply_list(list(data.tags), by_kind.get(FacetKind.TAG, {})))
         case MetadataField.SERIES:
-            return ResolvedField(value=apply_scalar(data.series, rules_by_kind.get(FacetKind.SERIES, {})))
+            return ResolvedField(value=apply_scalar(data.series, by_kind.get(FacetKind.SERIES, {})))
         case MetadataField.STUDIO:
-            return ResolvedField(value=apply_scalar(data.studio, rules_by_kind.get(FacetKind.STUDIO, {})))
+            return ResolvedField(value=apply_scalar(data.studio, by_kind.get(FacetKind.STUDIO, {})))
         case MetadataField.PUBLISHER:
-            return ResolvedField(value=apply_scalar(data.publisher, rules_by_kind.get(FacetKind.PUBLISHER, {})))
+            return ResolvedField(value=apply_scalar(data.publisher, by_kind.get(FacetKind.PUBLISHER, {})))
         case _:
             return ResolvedField(value=getattr(data, field, None))
 
@@ -200,8 +233,8 @@ def empty_rules_by_kind() -> dict[FacetKind, dict[str, RuleEntry]]:
 def rule_lookup_names(values: FacetFieldValues) -> dict[FacetKind, set[str]]:
     """六个真值字段在规则表里可能命中的名字, 按 kind 分组.
 
-    演员同时给出原始名与 ``name(alias1, alias2)`` 拆出的展示名: 落库前先按原始名判一次 block,
-    再按解析出的展示名判一次, 两次都在查找范围内.
+    演员同时给出原始名与 ``name(alias1, alias2)`` 拆出的展示名. 别名表映射出的展示名不在这里:
+    那需要 session, 由 ``facet_helpers.load_rules_for_names`` 并入并随 ``RuleSet.actor_display`` 一起返回.
     """
     names: dict[FacetKind, set[str]] = {kind: set() for kind in SCRAPE_FACET_KINDS}
     names[FacetKind.ACTOR] = {

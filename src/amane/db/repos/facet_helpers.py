@@ -22,6 +22,7 @@ from ..facet_rules import (
     RuleEntry,
     RuleRow,
     RulesByKind,
+    RuleSet,
     apply_metadata_facet_fields,
     empty_rules_by_kind,
     facet_field_values,
@@ -634,17 +635,20 @@ async def load_all_rules(session: AsyncSession) -> dict[FacetKind, dict[str, Rul
     return out
 
 
-async def load_rules_for_names(
-    session: AsyncSession, names: Mapping[FacetKind, Collection[str]]
-) -> dict[FacetKind, dict[str, RuleEntry]]:
-    """按候选名定向读取治理规则; 单跳在同一次查询内判完.
+async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, Collection[str]]) -> RuleSet:
+    """按候选名定向读取治理数据; 单跳在同一次查询内判完.
 
     每次探测走 ``(kind, source_name)`` 唯一索引, 因此代价随候选名个数线性增长、随规则表规模对数增长, 不做全表扫.
     外连接把 alias 目标的 action 一并取回, 目标被 block 的别名在结果里直接收敛为 block.
+    演员候选名另带上别名表映射出的展示名, 与映射一起返回: 取值期与写库期据此判到同一批名字.
     候选名总数超过一条语句的绑定上限时才分批.
     """
+    display = await _alias_display_names(session, names.get(FacetKind.ACTOR, ()))
+    candidates = {kind: set(found) for kind, found in names.items()}
+    if display:
+        candidates.setdefault(FacetKind.ACTOR, set()).update(display.values())
     out = empty_rules_by_kind()
-    pairs = [(kind, name) for kind, found in names.items() for name in sorted(set(found))]
+    pairs = [(kind, name) for kind, found in candidates.items() for name in sorted(found)]
     target = aliased(FacetRule)
     for batch in chunks(pairs):
         # 命中行连同 alias 目标行的 action 一起取回; 目标行不存在时该列为 None.
@@ -662,14 +666,14 @@ async def load_rules_for_names(
         ]
         for row_kind, rules in rules_from_rows(rows).items():
             out[row_kind].update(rules)
-    return out
+    return RuleSet(rules=out, actor_display=display)
 
 
-async def _alias_display_names(session: AsyncSession, actor_names: Sequence[str]) -> set[str]:
-    """入参名经别名表唯一命中时对应的展示名.
+async def _alias_display_names(session: AsyncSession, actor_names: Collection[str]) -> dict[str, str]:
+    """入参名在别名表命中的展示名, 以入参名为键.
 
-    只在「展示名与入参名不同」的条目上做一次 ``actor_aliases`` 查询, 因此规则读取仍是一次
-    往返; 漏查的后果是 block 判不到展示名, 见 ``clean_actor_names``.
+    只做映射不做唯一性收敛: 歧义别名 (多个演员共享一名) 时保留全部候选, 判定取最保守的一个 ——
+    任一命中的展示名被 block 即视为被 block.
     """
     candidates: set[str] = set()
     for raw in actor_names:
@@ -679,26 +683,22 @@ async def _alias_display_names(session: AsyncSession, actor_names: Sequence[str]
         if name:
             candidates.add(name)
     if not candidates:
-        return set()
+        return {}
     stmt = (
         select(col(ActorAlias.name), col(Actor.name))
         .join(Actor, col(Actor.id) == col(ActorAlias.actor_id))
         .where(col(ActorAlias.name).in_(sorted(candidates)))
     )
-    return {display for alias, display in (await session.exec(stmt)).all() if display not in candidates}
+    return {alias: name for alias, name in (await session.exec(stmt)).all() if alias != name}
 
 
-async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> dict[FacetKind, dict[str, RuleEntry]]:
+async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> RulesByKind:
     """按这一行当前的六个分类取值定向读取规则, 一次查询取全.
-    演员候选名另并入别名表唯一的展示名: 清洗阶段解析出的展示名可能不在源站给的名单里,
-    而 block 判的是展示名. 名字在一起查, 写路径因此不额外往返.
+
+    演员候选名由 ``load_rules_for_names`` 内部并入别名表的展示名, 清洗阶段解析出的展示名
+    因此也在查找范围内; 写路径不额外往返.
     """
-    values = facet_field_values(meta)
-    names = rule_lookup_names(values)
-    display = await _alias_display_names(session, values.actors)
-    if display:
-        names[FacetKind.ACTOR] = {*names.get(FacetKind.ACTOR, ()), *display}
-    return await load_rules_for_names(session, names)
+    return (await load_rules_for_names(session, rule_lookup_names(facet_field_values(meta)))).rules
 
 
 async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata, rules_by_kind: RulesByKind) -> None:

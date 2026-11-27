@@ -1745,6 +1745,19 @@ class TestActorLocks:
         assert meta.actors == ["保留"]
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_alias_display_map_reaches_aggregate_fallback(self, repo: Repository):
+        """别名映射随规则一起返回, 取值期据此回退而非等落库才剔除."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        loaded = await repo.load_rules_for_names({FacetKind.ACTOR: ["みい"]})
+
+        assert loaded.actor_display == {"みい": "Mei"}
+        assert loaded.rules[FacetKind.ACTOR]["Mei"].action == FacetRuleAction.BLOCK
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
         """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
         actor = await self._actor(repo, "Mei")
@@ -1813,7 +1826,7 @@ class TestRuleLoadEquivalence:
         async with repo._session() as session:
             full = await load_all_rules(session)
             names = {kind: sorted(rules) for kind, rules in full.items() if rules}
-            targeted = await load_rules_for_names(session, names) if names else {}
+            targeted = (await load_rules_for_names(session, names)).rules if names else {}
         for kind, rules in full.items():
             assert targeted.get(kind, {}) == rules, kind
         # user_tag 不进规则表读取面: 硬删且不写规则, 这里只锁住它不会从 SQL 路径漏出来.
