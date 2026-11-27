@@ -22,14 +22,14 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 
 ## 写入事务边界
 
-这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁 (条目的 upsert / update / merge、分类治理、用户标签挂载); 事务由 Repo 公开方法提交, `src/amane/db/repos/facet_helpers.py` 内的 helper 不提交. 也可写成带源状态谓词的单条 UPDATE 并检查命中行数 (任务状态迁移, 见 `src/amane/db/repos/tasks.py`).
+这类写入读取前统一经 `src/amane/db/repos/base.py::acquire_write_lock` 取得写锁 (条目的 upsert / update / merge、分类治理、用户标签挂载、整理侧 `MediaFile.path` 的改路径); 事务由 Repo 公开方法提交, `src/amane/db/repos/facet_helpers.py` 内的 helper 不提交. 也可写成带源状态谓词的单条 UPDATE 并检查命中行数 (任务状态迁移, 见 `src/amane/db/repos/tasks.py`).
 
 - 写锁是库级的, 从取得写锁到提交之间其它写入被阻塞. 临界区内不允许出现联网或磁盘等待, 否则全库写入一并被拖住.
-- 写事务内不得再借连接: 会话已从池里取走一条, 事务内另开会话 (`set_media_hook` 之类会回查库的钩子) 让单次写入同时占两条, 并发写入互相等对方的第二条, 池耗尽后按 pool_timeout 超时. 这类钩子一律放在会话退出之后调用.
+- 写事务内不得再借连接: 会话已从池里取走一条, 事务内另开会话 (`set_media_hook` 之类会回查库的钩子) 让单次写入同时占两条, 并发写入互相等对方的第二条, 池耗尽后按 pool_timeout 超时. 这类钩子一律放在会话退出之后调用. 成批的并发写入同样受此约束: 池只有 5+10 条, 一个任务的并发度须自设上限 (`media/resource_store.py::ResourceStore.acquire_extrafanart`), 否则写锁等待期间连接全被该任务占住, 同进程的其它写入排队超时.
 - 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.
 - 该写法依赖驱动不自行发出 `BEGIN`; 驱动或方言改为显式发出时失效.
 - 番号比较一律经 `src/amane/db/models.py::metadata_number_predicate`, 才能命中 `ix_metadata_number`.
-- 同类窗口的另一处: `src/amane/db/repos/media.py::MediaRepoMixin.create_media_file` 直接提交, 两条并行 `REFRESH` 都会判定路径未见, 后提交者违反 `media_files.path` 的 UNIQUE 约束, 整个 `REFRESH` 失败且文件不入库.
+- 同类窗口的另一处: `src/amane/db/repos/media.py::MediaRepoMixin.create_media_file` 直接提交, 两条并行 `REFRESH` 都会判定路径未见, 后提交者违反 `media_files.path` 的 UNIQUE 约束, 整个 `REFRESH` 失败且文件不入库. 整理改 `MediaFile.path` 时占用判定与写入须同处一个事务 (`update_media_file_path`), 先查后写会让整理整体失败; 监听侧另走 `update_media_file` 的裸 UPDATE.
 
 连接级 PRAGMA (WAL / `synchronous=NORMAL` / `busy_timeout` / 外键) 只能在 `db/engine.py` 的连接钩子里逐连接下发, 别处另开业务引擎会退回驱动默认. 写锁被占用时连接等待至多 `busy_timeout` 才报 `database is locked`, 临界区短于该值即不失败. `synchronous=NORMAL` 的取舍限于 WAL 已开启: 掉电丢最近若干已提交事务而不损坏库, 换掉逐笔 fsync 拉长的持锁时间.
 

@@ -522,7 +522,7 @@ class Resource(SQLModel, table=True):
     """入库与就地超分后按内容判定; ``NULL`` 与 ``application/octet-stream`` 表示类型未定."""
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     """派生/处理追溯. 裁剪: {'op':'crop','src':源url,'args':str};
-    任意资源被超分后追加 {'sr': {tool,model,scale}}. 原始未处理图为 {}."""
+    任意资源被超分后追加 {'sr': {tool,model,scale}}. 判裁切按 ``scale`` 从盘上尺寸除回. 原始未处理图为 {}."""
     downloaded_at: datetime = Field(default_factory=_utcnow)
 
 
