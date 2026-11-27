@@ -36,6 +36,7 @@ from amane.db.repo_types import (
     MetadataFields,
     WriteMode,
 )
+from amane.db.repos.facet_helpers import load_all_rules, load_rules_for_names
 from amane.db.repos.metadata import _merge_raw_snapshots
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
@@ -1732,6 +1733,20 @@ class TestActorLocks:
         assert updated is not None and updated.series is None
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
+        """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        via_alias = await repo.upsert_metadata(number="TGT-6", actors=["みい"])
+        assert via_alias.actors == []
+
+        kept = await repo.upsert_metadata(number="TGT-7", actors=["みい", "别人"])
+        assert kept.actors == ["别人"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_save_actor_skips_locked_aliases(self, repo: Repository):
         actor = await self._actor(repo, "SaveFrozen")
         assert actor.id is not None
@@ -1754,6 +1769,40 @@ class TestActorLocks:
         assert set(ActorField) == (set(Actor.model_fields) - identity - non_person) | {ActorField.ALIASES}
         assert set(ActorField) == set(get_type_hints(ActorPersonFields)) - non_person
         assert set(ActorField) == set(AggregatedActor.model_fields) - non_person
+
+
+class TestRuleLoadEquivalence:
+    """全表读取与定向读取须给出同一份规则, 否则两条路径的折叠结果不一致."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rows",
+        [
+            [
+                ("series", "A", FacetRuleAction.ALIAS, "B"),
+                ("series", "B", FacetRuleAction.BLOCK, None),
+                ("tag", "T", FacetRuleAction.BLOCK, None),
+                ("actor", "演员", FacetRuleAction.BLOCK, None),
+            ],
+            [("studio", "S", FacetRuleAction.ALIAS, "S2")],
+            [],
+        ],
+        ids=["alias_to_blocked", "alias_only", "empty"],
+    )
+    async def test_same_entries(
+        self, repo: Repository, rows: list[tuple[str, str, FacetRuleAction, str | None]]
+    ) -> None:
+        async with repo._session() as session:
+            for kind, source, action, target in rows:
+                session.add(FacetRule(kind=FacetKind(kind), source_name=source, action=action, target_name=target))
+            await session.commit()
+
+        async with repo._session() as session:
+            full = await load_all_rules(session)
+            names = {kind: sorted(rules) for kind, rules in full.items() if rules}
+            targeted = await load_rules_for_names(session, names) if names else {}
+        for kind, rules in full.items():
+            assert targeted.get(kind, {}) == rules, kind
 
 
 class TestTaskRepo:

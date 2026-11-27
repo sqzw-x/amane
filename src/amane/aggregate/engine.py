@@ -54,15 +54,7 @@ RAW_TO_DB_FIELD: dict[str, str] = {
 
 SCALAR_FIELD_NAMES: frozenset[str] = frozenset(SCALAR_FIELDS)
 
-FACET_RULE_FIELDS: tuple[MetadataField, ...] = (
-    MetadataField.ACTORS,
-    MetadataField.DIRECTORS,
-    MetadataField.TAGS,
-    MetadataField.SERIES,
-    MetadataField.STUDIO,
-    MetadataField.PUBLISHER,
-)
-
+# 受治理规则约束的六个分类字段; 顺序即候选名的收集顺序.
 RULE_FIELD_KINDS: dict[MetadataField, FacetKind] = {
     MetadataField.ACTORS: FacetKind.ACTOR,
     MetadataField.DIRECTORS: FacetKind.DIRECTOR,
@@ -71,6 +63,8 @@ RULE_FIELD_KINDS: dict[MetadataField, FacetKind] = {
     MetadataField.STUDIO: FacetKind.STUDIO,
     MetadataField.PUBLISHER: FacetKind.PUBLISHER,
 }
+
+FACET_RULE_FIELDS: tuple[MetadataField, ...] = tuple(RULE_FIELD_KINDS)
 
 
 URL_FIELD_MAP: dict[MetadataField, str] = {
@@ -233,8 +227,9 @@ async def execute_graph(
         second=[node.cache_key for node in second],
     )
 
+    queried: set[tuple[FacetKind, str]] = set()
     await _fetch_phase(state, first, query, crawlers, snapshots, None)
-    rules = await _load_rules(load_rules, graph, state)
+    rules = await _load_rules(load_rules, graph, state, queried)
     _resolve_scalars(graph, state, rules)
     await _report_progress(on_progress, state, first, field_total)
 
@@ -245,7 +240,7 @@ async def execute_graph(
         _assemble_url_fields(graph, state.fetched, partial, cache_keys={node.cache_key for node in first})
         await _fetch_phase(state, second, query, crawlers, snapshots, partial)
         # 第二段新增的名字单独补查; 第一段已定值的字段不再取值, 不重复查.
-        rules = await _load_rules(load_rules, graph, state, base=rules)
+        rules = await _load_rules(load_rules, graph, state, queried, base=rules)
         _resolve_scalars(graph, state, rules)
         await _report_progress(on_progress, state, second, field_total)
 
@@ -277,18 +272,22 @@ async def _load_rules(
     load_rules: LoadRules | None,
     graph: FetchGraph,
     state: ExecutionState,
+    queried: set[tuple[FacetKind, str]],
     base: RulesByKind | None = None,
 ) -> RulesByKind | None:
     """按本段已抓结果与未定值字段收集候选名, 一次取回规则; 没有候选名时不发查询.
 
-    ``base`` 是上一段的结果: 已查过的名字不重复查, 两段合并成一份规则表.
+    ``queried`` 记录已发出的名字, 与命中与否无关: 规则表里没有对应行的名字同样不再重查.
+    两段的规则表经 ``base`` 合并成一份.
     """
     if load_rules is None:
         return None
     resolved = {field for field in FACET_RULE_FIELDS if field in state.result.field_sources}
-    pending = _names_to_query(pending_rule_names(graph, state.fetched, resolved), base)
+    pending = _names_to_query(pending_rule_names(graph, state.fetched, resolved), queried)
     if not pending:
         return base
+    for kind, found in pending.items():
+        queried.update((kind, name) for name in found)
     fetched = await load_rules(pending)
     if fetched is None:
         return base
@@ -300,12 +299,13 @@ async def _load_rules(
     return merged
 
 
-def _names_to_query(pending: Mapping[FacetKind, set[str]], known: RulesByKind | None) -> dict[FacetKind, list[str]]:
-    """去掉 ``known`` 已覆盖的名字, 其余转成一次查询的候选; 空集的分组不查."""
+def _names_to_query(
+    pending: Mapping[FacetKind, set[str]], queried: set[tuple[FacetKind, str]]
+) -> dict[FacetKind, list[str]]:
+    """去掉已查过的名字, 其余转成一次查询的候选; 空集的分组不查."""
     out: dict[FacetKind, list[str]] = {}
     for kind, found in pending.items():
-        seen = known.get(kind, {}) if known is not None else {}
-        rest = sorted(name for name in found if name not in seen)
+        rest = sorted(name for name in found if (kind, name) not in queried)
         if rest:
             out[kind] = rest
     return out
@@ -543,14 +543,16 @@ def _fill_resolved(
     resolved: ResolvedField,
     source_key: SourceKey,
 ) -> None:
-    """写入已按规则收敛的取值; 演员条目整体替换, 不复用站点的重复项."""
+    """写入已按规则收敛的取值; 演员条目整体复制, 后续填空不改站点结果."""
     if resolved.actors is not None:
         result.actors = [item.model_copy() for item in resolved.actors]
     elif resolved.names is not None:
         if field == MetadataField.DIRECTORS:
             result.directors = list(resolved.names)
-        else:
+        elif field == MetadataField.TAGS:
             result.tags = list(resolved.names)
+        else:
+            raise ValueError(f"字段 {field} 不按名单收敛")
     else:
         setattr(result, field, resolved.value)
     result.field_sources[field] = source_key

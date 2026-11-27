@@ -245,7 +245,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
     async def _load_rules(self, names: RuleQuery) -> dict[FacetKind, dict[str, RuleEntry]] | None:
         """按本次候选名取治理规则, 供聚合在取值前折叠分类字段.
 
-        读取失败不阻断刮削: 拿不到规则时按未收敛的取值继续, 落库时仍会执行一次规则.
+        读取失败只保证取值期不中断: 落库期仍会按本行候选名重读一次, 那一步失败照常让任务失败.
         """
         try:
             return await self._repo.load_rules_for_names(names)

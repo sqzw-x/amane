@@ -1296,6 +1296,34 @@ class TestFacetRuleFallback:
         assert result.metadata.tags == ["第二段标签"]
 
     @pytest.mark.asyncio
+    async def test_second_phase_does_not_requery_unmatched_names(self) -> None:
+        """第一段查过但规则表里没有对应行的名字, 第二段不再重查."""
+        # 系列字段把第二段的站排在链首: 第一段它尚未执行, 字段因此不定值, 名字进入第一段查询.
+        routes: defaultdict[MetadataField, list[SiteName]] = defaultdict(lambda: [DB, DMM])
+        routes[MetadataField.SERIES] = [DMM, DB]
+        calls: list[dict[FacetKind, list[str]]] = []
+
+        async def loader(names) -> dict[FacetKind, dict[str, RuleEntry]]:
+            calls.append({kind: sorted(found) for kind, found in names.items()})
+            return _rules()
+
+        result = await aggregate(
+            SearchQuery("X-4"),
+            {
+                K1: MockCrawler(MediaMetadata(number="X-4", title="t", series="系列A")),
+                K2: RecordingCrawler(MediaMetadata(number="X-4", title="t", series="系列B")),
+            },
+            routes,
+            load_rules=loader,
+            deferred_sites=frozenset({K2}),
+        )
+        assert calls[0][FacetKind.SERIES] == ["系列A"]
+        # 系列A 查过且无规则行, 第二段只补新增的系列B.
+        assert calls[1][FacetKind.SERIES] == ["系列B"]
+        assert result.metadata.series == "系列B"
+        assert result.field_sources.get("series") == K2
+
+    @pytest.mark.asyncio
     async def test_loader_failure_falls_back_to_raw_values(self) -> None:
         """规则读取失败时按未收敛取值继续, 不中断刮削."""
         routes = defaultdict(lambda: [DB, DMM])

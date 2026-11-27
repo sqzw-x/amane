@@ -225,8 +225,8 @@ type RuleRow = tuple[FacetKind, str, FacetRuleAction, str | None, FacetRuleActio
 def rules_from_rows(rows: Iterable[RuleRow]) -> dict[FacetKind, dict[str, RuleEntry]]:
     """定向查询结果转成规则表. 每行是 (kind, source_name, action, target_name, target_action).
 
-    target_action 是 alias 目标的 action (目标行不存在时为 None), 因此单跳在同一次查询内判完:
-    目标被 block 的别名与目标不存在同样收敛为空, 见 ``resolve_name``.
+    target_action 是 alias 目标的 action (目标行不存在时为 None); 只取一跳, 不追踪 alias 的 alias.
+    调用方须保证每行都带目标行快照 (定向读取走外连接, 全表读取在同一次结果里反查), 否则两条路径会产出不同的 ``RuleEntry``.
     """
     by_kind = empty_rules_by_kind()
     for kind, source_name, action, target_name, target_action in rows:
