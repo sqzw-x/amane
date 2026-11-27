@@ -164,10 +164,8 @@ class RuleSet:
     """
 
     rules: RulesByKind
-    actor_display: Mapping[str, str] = field(default_factory=dict)
-
-    def empty(self) -> bool:
-        return not self.rules and not self.actor_display
+    # 别名 → 全部命中的展示名. 歧义别名 (多个演员共享一名) 时保持全部候选, 判定取任一命中.
+    actor_display: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,15 +182,15 @@ class ResolvedField:
         return not (self.value or self.actors or self.names)
 
 
-def blocked_actor(name: str, actor_rules: RulesBySource, display: Mapping[str, str]) -> bool:
-    """按展示名判 block: 别名表命中时先换成展示名, 再查规则.
+def blocked_actor(name: str, actor_rules: RulesBySource, display: Mapping[str, frozenset[str]]) -> bool:
+    """按展示名判 block: 原名与别名表命中的每个展示名, 任一被剔除即算剔除.
 
-    取值期与写库期共用这一条判定, 两处的剔除结论才不会分叉.
+    取值期与写库期共用这一条判定, 两处的剔除结论才不会分叉. 歧义别名不挑候选, 因此结论
+    与数据库返回顺序无关.
     """
     if _is_blocked_name(name, actor_rules):
         return True
-    resolved = display.get(name)
-    return resolved is not None and _is_blocked_name(resolved, actor_rules)
+    return any(_is_blocked_name(display_name, actor_rules) for display_name in display.get(name, ()))
 
 
 def _is_blocked_name(name: str, rules: RulesBySource) -> bool:

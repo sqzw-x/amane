@@ -1086,7 +1086,7 @@ def _rules(pairs: dict[tuple[str, str], RuleEntry] | None = None) -> dict[FacetK
     return out
 
 
-def _rule_loader(rules: dict[FacetKind, dict[str, RuleEntry]], actor_display: dict[str, str] | None = None):
+def _rule_loader(rules: dict[FacetKind, dict[str, RuleEntry]], actor_display: dict[str, frozenset[str]] | None = None):
     async def load(_names):
         return RuleSet(rules=rules, actor_display=actor_display or {})
 
@@ -1245,7 +1245,9 @@ class TestFacetRuleFallback:
             SearchQuery("X-6"),
             {K1: MockCrawler(first), K2: MockCrawler(second)},
             routes,
-            load_rules=_rule_loader(_rules({("actor", "Mei"): RuleEntry(FacetRuleAction.BLOCK)}), {"みい": "Mei"}),
+            load_rules=_rule_loader(
+                _rules({("actor", "Mei"): RuleEntry(FacetRuleAction.BLOCK)}), {"みい": frozenset({"Mei"})}
+            ),
         )
         assert [item.name for item in result.metadata.actors] == ["正式"]
         assert result.field_sources.get("actors") == K2
@@ -1260,25 +1262,35 @@ class TestFacetRuleFallback:
             SearchQuery("X-7"),
             {K1: MockCrawler(first), K2: MockCrawler(second)},
             routes,
-            load_rules=_rule_loader(_rules(), {"みい": "Mei"}),
+            load_rules=_rule_loader(_rules(), {"みい": frozenset({"Mei"})}),
         )
         assert [item.name for item in result.metadata.actors] == ["みい"]
         assert result.field_sources.get("actors") == K1
 
     @pytest.mark.asyncio
-    async def test_actor_alias_ambiguous_blocks_conservatively(self) -> None:
-        """歧义别名映射到多个展示名时, 任一被剔除即视为剔除."""
+    @pytest.mark.parametrize(
+        ("desc", "blocked_name", "expected"),
+        [
+            ("任一候选被剔除即剔除", "演员甲", ["正式"]),
+            ("候选都未被剔除则保留", "局外人", ["共享名"]),
+        ],
+        ids=["one_blocked", "none_blocked"],
+    )
+    async def test_actor_alias_ambiguous_uses_all_candidates(
+        self, desc: str, blocked_name: str, expected: list[str]
+    ) -> None:
+        """歧义别名保留全部展示名, 判定与候选的排列顺序无关."""
         routes = defaultdict(lambda: [DB, DMM])
         first = MediaMetadata(number="X-8", title="t", actors=[FilmActor(name="共享名")])
         second = MediaMetadata(number="X-8", title="t", actors=[FilmActor(name="正式")])
-        rules = _rules({("actor", "演员甲"): RuleEntry(FacetRuleAction.BLOCK)})
+        rules = _rules({("actor", blocked_name): RuleEntry(FacetRuleAction.BLOCK)})
         result = await aggregate(
             SearchQuery("X-8"),
             {K1: MockCrawler(first), K2: MockCrawler(second)},
             routes,
-            load_rules=_rule_loader(rules, {"共享名": "演员甲"}),
+            load_rules=_rule_loader(rules, {"共享名": frozenset({"演员甲", "演员乙"})}),
         )
-        assert [item.name for item in result.metadata.actors] == ["正式"]
+        assert [item.name for item in result.metadata.actors] == expected, desc
 
     @pytest.mark.asyncio
     async def test_actor_gender_fill_does_not_touch_fetched(self) -> None:

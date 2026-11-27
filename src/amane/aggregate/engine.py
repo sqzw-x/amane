@@ -362,7 +362,7 @@ def _resolve_scalars(graph: FetchGraph, state: ExecutionState, rules: RuleSet | 
     分类字段先按治理规则收敛再判空: 被剔除的取值不算命中, 继续下一个站;
     多值字段整份剔除后为空时同样回退, 部分保留照常采用.
     """
-    applicable = rules or RuleSet(rules={})
+    applicable = RuleSet(rules={}) if rules is None else rules
     for field in SCALAR_FIELDS:
         if field in state.result.field_sources:
             continue

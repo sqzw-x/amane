@@ -646,7 +646,7 @@ async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, 
     display = await _alias_display_names(session, names.get(FacetKind.ACTOR, ()))
     candidates = {kind: set(found) for kind, found in names.items()}
     if display:
-        candidates.setdefault(FacetKind.ACTOR, set()).update(display.values())
+        candidates.setdefault(FacetKind.ACTOR, set()).update(name for names in display.values() for name in names)
     out = empty_rules_by_kind()
     pairs = [(kind, name) for kind, found in candidates.items() for name in sorted(found)]
     target = aliased(FacetRule)
@@ -669,11 +669,11 @@ async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, 
     return RuleSet(rules=out, actor_display=display)
 
 
-async def _alias_display_names(session: AsyncSession, actor_names: Collection[str]) -> dict[str, str]:
-    """入参名在别名表命中的展示名, 以入参名为键.
+async def _alias_display_names(session: AsyncSession, actor_names: Collection[str]) -> dict[str, frozenset[str]]:
+    """入参名在别名表命中的全部展示名, 以入参名为键.
 
-    只做映射不做唯一性收敛: 歧义别名 (多个演员共享一名) 时保留全部候选, 判定取最保守的一个 ——
-    任一命中的展示名被 block 即视为被 block.
+    歧义别名 (多个演员共享同一别名) 时保留全部候选而不是挑一个: 判定取「任一被剔除即剔除」,
+    结论因此与查询返回顺序无关.
     """
     candidates: set[str] = set()
     for raw in actor_names:
@@ -689,7 +689,11 @@ async def _alias_display_names(session: AsyncSession, actor_names: Collection[st
         .join(Actor, col(Actor.id) == col(ActorAlias.actor_id))
         .where(col(ActorAlias.name).in_(sorted(candidates)))
     )
-    return {alias: name for alias, name in (await session.exec(stmt)).all() if alias != name}
+    found: dict[str, set[str]] = {}
+    for alias, name in (await session.exec(stmt)).all():
+        if alias != name:
+            found.setdefault(alias, set()).add(name)
+    return {alias: frozenset(names) for alias, names in found.items()}
 
 
 async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> RulesByKind:
