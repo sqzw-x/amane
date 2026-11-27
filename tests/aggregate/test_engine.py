@@ -1236,6 +1236,21 @@ class TestFacetRuleFallback:
         assert result.field_sources.get("actors") == K2
 
     @pytest.mark.asyncio
+    async def test_actor_gender_fill_does_not_touch_fetched(self) -> None:
+        """性别填空只改聚合结果, 站点结果保持原样 (后续站点复用的前提)."""
+        routes = defaultdict(lambda: [DB, DMM])
+        source = MediaMetadata(number="X-5", title="t", actors=[FilmActor(name="甲", gender=ActorGender.FEMALE)])
+        result = await aggregate(
+            SearchQuery("X-5"),
+            {K1: MockCrawler(source), K2: MockCrawler(None)},
+            routes,
+            load_rules=_rule_loader(_rules()),
+        )
+        assert source.actors[0].gender is ActorGender.FEMALE
+        assert [item.name for item in result.metadata.actors] == ["甲"]
+        assert result.metadata.actors[0] is not source.actors[0]
+
+    @pytest.mark.asyncio
     async def test_rules_loaded_once_with_candidate_names(self) -> None:
         routes = defaultdict(lambda: [DB, DMM])
         calls: list[dict[FacetKind, list[str]]] = []

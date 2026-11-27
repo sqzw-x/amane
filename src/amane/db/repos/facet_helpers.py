@@ -665,12 +665,40 @@ async def load_rules_for_names(
     return out
 
 
-async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> dict[FacetKind, dict[str, RuleEntry]]:
-    """按这一行当前的六个分类取值定向读取规则 (含演员别名拆分后的展示名).
+async def _alias_display_names(session: AsyncSession, actor_names: Sequence[str]) -> set[str]:
+    """入参名经别名表唯一命中时对应的展示名.
 
-    写路径只折叠本行实际出现的名字, 代价不随规则表规模增长.
+    只在「展示名与入参名不同」的条目上做一次 ``actor_aliases`` 查询, 因此规则读取仍是一次
+    往返; 漏查的后果是 block 判不到展示名, 见 ``clean_actor_names``.
     """
-    return await load_rules_for_names(session, rule_lookup_names(facet_field_values(meta)))
+    candidates: set[str] = set()
+    for raw in actor_names:
+        if not raw:
+            continue
+        name = split_actor_aliases(raw)[0]
+        if name:
+            candidates.add(name)
+    if not candidates:
+        return set()
+    stmt = (
+        select(col(ActorAlias.name), col(Actor.name))
+        .join(Actor, col(Actor.id) == col(ActorAlias.actor_id))
+        .where(col(ActorAlias.name).in_(sorted(candidates)))
+    )
+    return {display for alias, display in (await session.exec(stmt)).all() if display not in candidates}
+
+
+async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """按这一行当前的六个分类取值定向读取规则, 一次查询取全.
+    演员候选名另并入别名表唯一的展示名: 清洗阶段解析出的展示名可能不在源站给的名单里,
+    而 block 判的是展示名. 名字在一起查, 写路径因此不额外往返.
+    """
+    values = facet_field_values(meta)
+    names = rule_lookup_names(values)
+    display = await _alias_display_names(session, values.actors)
+    if display:
+        names[FacetKind.ACTOR] = {*names.get(FacetKind.ACTOR, ()), *display}
+    return await load_rules_for_names(session, names)
 
 
 async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata, rules_by_kind: RulesByKind) -> None:
@@ -1070,21 +1098,6 @@ def _is_blocked(rules: Mapping[str, RuleEntry], name: str) -> bool:
     return rule is not None and rule.action == FacetRuleAction.BLOCK
 
 
-async def _with_resolved_actor_rules(
-    session: AsyncSession, actor_rules: Mapping[str, RuleEntry], display_names: Sequence[str]
-) -> dict[str, RuleEntry]:
-    """补查只知道展示名的 actor 规则.
-
-    入参候选名来自源站, 别名表可能把它映射到另一个展示名; 展示名不在定向结果里时单独查一次,
-    代价只随入选演员数增长.
-    """
-    missing = sorted({name for name in display_names if name and name not in actor_rules})
-    if not missing:
-        return dict(actor_rules)
-    found = await load_rules_for_names(session, {FacetKind.ACTOR: missing})
-    return {**actor_rules, **found.get(FacetKind.ACTOR, {})}
-
-
 async def clean_actor_names(
     session: AsyncSession,
     meta: Metadata,
@@ -1097,9 +1110,8 @@ async def clean_actor_names(
     ``female`` / ``male`` 时填空; 不覆盖已有性别, 不写入 ``field_sources``; 性别已锁则跳过.
     别名并入同样跳过别名已锁的演员.
 
-    ``rules_by_kind`` 是调用方按本行候选名定向读取的规则, 覆盖原始名与 ``name(alias)`` 拆出的
-    展示名 (见 ``facet_rules.rule_lookup_names``). 别名表映射出的展示名不在入参候选里, 解析后
-    补查一次; 省略 ``rules_by_kind`` 时同样按本行候选名现查.
+    ``rules_by_kind`` 是调用方按本行候选名定向读取的规则, 覆盖原始名、``name(alias)`` 拆出的展示名
+    与别名表映射出的展示名 (见 ``load_rules_for_row``); 省略时按同一口径现查.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
@@ -1107,20 +1119,15 @@ async def clean_actor_names(
     genders = actor_genders or {}
     rules = rules_by_kind if rules_by_kind is not None else await load_rules_for_row(session, meta)
     actor_rules = rules.get(FacetKind.ACTOR, {})
-    # 解析放在判定之前: 别名表可以把入参名映射到另一个展示名, 而那个名字才是被 block 的对象.
-    parsed: list[tuple[str, str, list[str], Actor]] = []
+    seen: set[str] = set()
+    canonical: list[str] = []
+    alias_targets: dict[int, list[str]] = {}
     for raw in raw_names:
         name, aliases = split_actor_aliases(raw)
         if not name or _is_blocked(actor_rules, name):
             continue
         actor = await resolve_actor_by_name(session, name)
         assert actor is not None
-        parsed.append((raw, name, aliases, actor))
-    actor_rules = await _with_resolved_actor_rules(session, actor_rules, [actor.name for *_, actor in parsed])
-    seen: set[str] = set()
-    canonical: list[str] = []
-    alias_targets: dict[int, list[str]] = {}
-    for raw, name, aliases, actor in parsed:
         if _is_blocked(actor_rules, actor.name):
             continue
         seed = genders.get(raw) or genders.get(name)

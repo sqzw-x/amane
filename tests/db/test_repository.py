@@ -1733,6 +1733,18 @@ class TestActorLocks:
         assert updated is not None and updated.series is None
 
     @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_and_parentheses_name_is_blocked(self, repo: Repository):
+        """括号拆名与别名行是两条索引路径, 交叉时同样判到展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-8", actors=["みい(别名甲)", "保留"])
+
+        assert meta.actors == ["保留"]
+
+    @pytest.mark.asyncio(loop_scope="function")
     async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
         """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
         actor = await self._actor(repo, "Mei")
@@ -1783,6 +1795,7 @@ class TestRuleLoadEquivalence:
                 ("series", "B", FacetRuleAction.BLOCK, None),
                 ("tag", "T", FacetRuleAction.BLOCK, None),
                 ("actor", "演员", FacetRuleAction.BLOCK, None),
+                ("user_tag", "用户标签", FacetRuleAction.BLOCK, None),
             ],
             [("studio", "S", FacetRuleAction.ALIAS, "S2")],
             [],
@@ -1803,6 +1816,9 @@ class TestRuleLoadEquivalence:
             targeted = await load_rules_for_names(session, names) if names else {}
         for kind, rules in full.items():
             assert targeted.get(kind, {}) == rules, kind
+        # user_tag 不进规则表读取面: 硬删且不写规则, 这里只锁住它不会从 SQL 路径漏出来.
+        assert FacetKind.USER_TAG not in full
+        assert FacetKind.USER_TAG not in targeted
 
 
 class TestTaskRepo:
