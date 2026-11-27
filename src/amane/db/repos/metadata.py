@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy import ColumnElement, distinct, or_, text, update
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -69,6 +70,19 @@ def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str
     return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
 
 
+def _write_columns(instance: Metadata, fields: MetadataFields) -> None:
+    """逐列写入, 并让映射类 dict 列的顺序变化同样触发 UPDATE.
+
+    SQLAlchemy 判列是否变化用 ``==``, 而 dict 相等不看顺序; 站点分组列 (``extrafanart_urls`` /
+    ``scores``) 的首站就是取值, 顺序变化必须落库, 否则改了字段优先级重新刮削仍读到旧的首站.
+    """
+    for key, value in fields.items():
+        setattr(instance, key, value)
+    for key in fields:
+        if key in _ORDERED_MAPPING_COLUMNS:
+            flag_modified(instance, key)
+
+
 def _merge_raw_snapshots(
     target: Mapping[str, Mapping[str, object]],
     sources: Sequence[Mapping[str, Mapping[str, object]]],
@@ -122,6 +136,9 @@ _LOCK_FIELD_COLUMN: dict[MetadataField, str] = {
     MetadataField.SCORE: "scores",
 }
 _LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column in _LOCK_FIELD_COLUMN.items()}
+
+#: 首项即取值、因此顺序参与真值的映射列. 写入这两列时, 仅键序变化也要落库.
+_ORDERED_MAPPING_COLUMNS: frozenset[str] = frozenset({"extrafanart_urls", "scores"})
 
 
 def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
@@ -434,8 +451,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 incoming_raw = fields.get("raw")
                 if merge_raw and incoming_raw is not None:
                     fields["raw"] = {**(existing.raw or {}), **incoming_raw}
-                for key, value in fields.items():
-                    setattr(existing, key, value)
+                _write_columns(existing, fields)
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
@@ -515,10 +531,13 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 metadata.thumb_urls = updates["thumb_urls"]
             if "trailer_urls" in updates:
                 metadata.trailer_urls = updates["trailer_urls"]
+            # 首项即取值的映射列: 键序变化在 == 下不算变化, 须显式标脏才会落库.
             if "extrafanart_urls" in updates:
                 metadata.extrafanart_urls = updates["extrafanart_urls"]
+                flag_modified(metadata, "extrafanart_urls")
             if "scores" in updates:
                 metadata.scores = updates["scores"]
+                flag_modified(metadata, "scores")
             if "external_ids" in updates:
                 metadata.external_ids = updates["external_ids"]
             if "source_urls" in updates:

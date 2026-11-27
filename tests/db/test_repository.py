@@ -438,6 +438,81 @@ class TestMediaFileRepo:
         assert count == expected_count
 
 
+class _RecordingMediaHook:
+    """记录条目图片变化通知; 用来断言「没有变化」不触发向量重建."""
+
+    def __init__(self) -> None:
+        self.changed: list[int] = []
+
+    async def metadata_changed(self, metadata_id: int) -> None:
+        self.changed.append(metadata_id)
+
+
+class TestOrderedMappingColumns:
+    """站点分组列的首项即取值: 键序变化必须落库, 否则改了字段优先级重刮也读不到新顺序."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("first", "second", "expected_url"),
+        [
+            ({"dmm": ["d/1"]}, {"official": ["o/1"]}, "o/1"),
+            ({"dmm": ["d/1"], "official": ["o/1"]}, {"official": ["o/1"], "dmm": ["d/1"]}, "o/1"),
+            ({"dmm": ["d/1"]}, {"official": ["o/1"], "dmm": ["d/1"]}, "o/1"),
+        ],
+        ids=["replace_only_site", "reorder_existing_sites", "prepend_new_site"],
+    )
+    async def test_upsert_persists_key_order(self, repo: Repository, first: dict, second: dict, expected_url: str):
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls=first)
+        assert entry.id is not None
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls=second)
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert list(reloaded.extrafanart_urls) == list(second)
+        assert reloaded.extrafanart == [expected_url]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_persists_key_order(self, repo: Repository):
+        """PATCH / merge 走的是同一个列, 界面改首站同样要落库."""
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"dmm": ["d/1"], "official": ["o/1"]})
+        assert entry.id is not None
+
+        await repo.update_metadata(
+            entry.id, mode=WriteMode.MANUAL, extrafanart_urls={"official": ["o/1"], "dmm": ["d/1"]}
+        )
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert list(reloaded.extrafanart_urls) == ["official", "dmm"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scores_reorder_moves_the_displayed_score(self, repo: Repository):
+        """评分同为首项即取值, 站点顺序换了单值 score 要跟着换."""
+        entry = await repo.upsert_metadata(number="IPZZ-003", scores={"dmm": 4.5, "official": 80.0})
+        assert entry.id is not None
+        assert entry.score == 4.5
+
+        await repo.upsert_metadata(number="IPZZ-003", scores={"official": 80.0, "dmm": 4.5})
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert reloaded.score == 80.0
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_same_order_does_not_trigger_media_hook(self, repo: Repository):
+        """顺序没变时图片签名不变, 不得把每次刮削都变成一次语义索引重建."""
+        hook = _RecordingMediaHook()
+        repo.set_media_hook(hook)
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"]})
+        assert entry.id is not None
+        hook.changed.clear()
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"]})
+
+        assert hook.changed == []
+
+
 class TestMetadataRepo:
     @pytest.mark.asyncio(loop_scope="function")
     async def test_upsert_and_get(self, repo: Repository):
