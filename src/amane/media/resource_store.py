@@ -35,6 +35,10 @@ logger = structlog.get_logger()
 
 RESOURCE_URL_PREFIX = "/api/resources"
 
+# 剧照按站点整批下载, 每张写回记录都要借一条连接. 不设上限时一个几十张的站点会占满连接池
+# (默认 5 + 10), 同进程的整理 / 刮削随后在取连接这一步排队超时. 见 docs/dev/database.md.
+EXTRAFANART_CONCURRENCY = 4
+
 # 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing, up-timely 的 noimage) 时不能算获取成功:
 # 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
 _PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/", "/noimage.")
@@ -437,11 +441,16 @@ class ResourceStore:
         for site in priority:
             if site not in urls_by_site:
                 continue
-            results = await asyncio.gather(*[self.acquire(u, client) for u in urls_by_site[site]])
+            gate = asyncio.Semaphore(EXTRAFANART_CONCURRENCY)
+            results = await asyncio.gather(*[self._gated_acquire(gate, u, client) for u in urls_by_site[site]])
             paths = [p for p in results if p is not None]
             if paths:
                 return paths
         return []
+
+    async def _gated_acquire(self, gate: asyncio.Semaphore, url: str, client: WebClient) -> Path | None:
+        async with gate:
+            return await self.acquire(url, client)
 
     async def invalidate(self, url: str) -> None:
         async with self._session() as session:

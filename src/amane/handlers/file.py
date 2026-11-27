@@ -259,7 +259,9 @@ async def commit_organized_media_file(
 ) -> None:
     """整理后的路径仍在本库内才改 path; 已离开本库且源路径不在磁盘上则删行.
 
-    目标路径已被另一行占用时删本行; 占用行缺少刮削字段则从本行补上.
+    目标路径已被另一行占用时删本行, 占用行缺少刮削字段则从本行补上. 占用判定经
+    ``update_media_file_path`` 与写入同处一个事务: 同一批里的两行落到同一目标时, 后一行
+    拿到占用行而不是 UNIQUE 失败, 整理不会整体中断.
     """
     if media.id is None:
         return
@@ -269,13 +271,13 @@ async def commit_organized_media_file(
             await repo.delete_media_file(media.id)
         return
 
-    occupant = await repo.get_media_file_by_path(str(placed))
-    if occupant is None or occupant.id == media.id:
-        updated = await repo.update_media_file(media.id, path=str(placed))
-        if updated is not None and library is not None:
-            await refresh_external_subtitle(repo, updated, library)
+    write = await repo.update_media_file_path(media.id, str(placed))
+    if write.updated is not None:
+        if library is not None:
+            await refresh_external_subtitle(repo, write.updated, library)
         return
-    if occupant.id is None:
+    occupant = write.occupant
+    if occupant is None or occupant.id is None:
         return
     occupant_updates: MediaFileUpdates = {}
     if occupant.metadata_id is None and media.metadata_id is not None:

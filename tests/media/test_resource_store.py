@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from amane.media import ResourceStore, UpscaleOutcome, derived_locator
-from amane.media.resource_store import RESOURCE_URL_PREFIX, _is_placeholder_url, internal_url_hash
+from amane.media.resource_store import (
+    EXTRAFANART_CONCURRENCY,
+    RESOURCE_URL_PREFIX,
+    _is_placeholder_url,
+    internal_url_hash,
+)
 from amane.net.egress import EgressPolicy
 from amane.net.http import RateLimiters, WebClient
 
@@ -571,6 +576,62 @@ class TestPlaceholderRedirect:
         record = await resource_store.get_by_url(_REQUEST)
         assert record is not None
         assert record.size == resource_store.full_path(record).stat().st_size
+
+
+class TestExtrafanartConcurrency:
+    """剧照按站点整批下载, 每张写完都要借连接落记录; 不设上限时一个站点就能占满连接池."""
+
+    @pytest.mark.asyncio
+    async def test_bounds_inflight_downloads(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """在途下载数不超过上限: 并发度即连接占用的上界, 同进程的整理不必排队等连接."""
+        client = AsyncMock()
+        client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
+        inflight = 0
+        peak = 0
+
+        async def download(url: str, dest: Path, **_kwargs: object) -> bool:
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            await asyncio.sleep(0.05)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"jpeg-bytes")
+            inflight -= 1
+            return True
+
+        client.download = AsyncMock(side_effect=download)
+        urls = [f"https://img.example.com/still/{i}.jpg" for i in range(EXTRAFANART_CONCURRENCY * 3)]
+
+        paths = await resource_store.acquire_extrafanart({"dmm": urls}, ["dmm"], client)
+
+        assert len(paths) == len(urls)
+        assert peak <= EXTRAFANART_CONCURRENCY
+
+    @pytest.mark.asyncio
+    async def test_failed_site_falls_through_to_next(self, resource_store: ResourceStore) -> None:
+        """本站全失败才换下一个站点; 并发上限不改变站点顺序与「有结果即停」."""
+        client = AsyncMock()
+        client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
+
+        async def download(url: str, dest: Path, **_kwargs: object) -> bool:
+            if "bad" in url:
+                return False
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"jpeg-bytes")
+            return True
+
+        client.download = AsyncMock(side_effect=download)
+        urls_by_site = {
+            "dmm": ["https://img.example.com/bad/1.jpg"],
+            "javdb": ["https://img.example.com/ok/2.jpg", "https://img.example.com/ok/3.jpg"],
+        }
+
+        paths = await resource_store.acquire_extrafanart(urls_by_site, ["dmm", "javdb"], client)
+
+        assert len(paths) == 2
+        assert all("ok" in str(p) or p.exists() for p in paths)
 
 
 def _siblings(dest: Path) -> list[Path]:

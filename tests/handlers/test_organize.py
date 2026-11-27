@@ -1311,6 +1311,46 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_commit_organized_media_file_absorbs_concurrent_collision(repo: Repository, tmp_path: Path) -> None:
+    """同一目标被两行指向时后到的一行接管占用行, 不撞 path 的 UNIQUE.
+
+    整理范围内两行渲染到同一目标 (或其它写入路径同时改同一行) 时, 先查后写会让两个会话都看到
+    路径空闲, 后提交的那个整条任务失败.
+    """
+    lib_root = tmp_path / "lib"
+    lib_root.mkdir()
+    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
+    assert lib.id is not None
+    meta = await repo.upsert_metadata(number="NSFS-039", studio="Studio")
+    assert meta.id is not None
+    placed = lib_root / "Studio" / "NSFS-039" / "NSFS-039.mp4"
+    src_a = lib_root / "incoming-a" / "NSFS-039.mp4"
+    src_b = lib_root / "incoming-b" / "NSFS-039.mp4"
+    for src in (src_a, src_b):
+        src.parent.mkdir()
+        src.write_bytes(b"video")
+
+    first = await repo.create_media_file(
+        lib.id, path=str(src_a), number="NSFS-039", status=MediaFileStatus.SCRAPED, metadata_id=meta.id
+    )
+    second = await repo.create_media_file(lib.id, path=str(src_b), number="NSFS-039")
+    assert first.id is not None and second.id is not None
+
+    results = await asyncio.gather(
+        commit_organized_media_file(repo, first, placed, lib_root),
+        commit_organized_media_file(repo, second, placed, lib_root),
+        return_exceptions=True,
+    )
+    assert [r for r in results if isinstance(r, BaseException)] == []
+
+    rows = await repo.list_media_files(library_id=lib.id, limit=None)
+    assert [row.path for row in rows] == [str(placed)]
+    survivor = rows[0]
+    assert survivor.metadata_id == meta.id
+    assert survivor.status == MediaFileStatus.SCRAPED
+
+
+@pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize("mode", [MoveMode.MOVE, MoveMode.COPY])
 async def test_organize_placed_outside_library(
     repo: Repository, resource_store: ResourceStore, tmp_path: Path, mode: MoveMode
