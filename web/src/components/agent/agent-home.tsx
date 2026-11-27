@@ -39,6 +39,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconCopy,
   IconDots,
   IconList,
   IconPencil,
@@ -1087,6 +1088,16 @@ function SessionItem({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
 
+  /** 会话 id 是 debug 的入口 (目录名、日志、trace 端点), 因此单独给一个复制项. */
+  const copySessionId = async (id: number) => {
+    try {
+      await navigator.clipboard.writeText(String(id));
+      notifications.show({ message: t("sessionIdCopied", { id }), color: "blue" });
+    } catch {
+      notifications.show({ message: t("sessionIdCopyFailed"), color: "red" });
+    }
+  };
+
   if (editing) {
     return (
       <TextInput
@@ -1145,6 +1156,12 @@ function SessionItem({
           </UnstyledButton>
         </Menu.Target>
         <Menu.Dropdown>
+          <Menu.Item
+            leftSection={<IconCopy size={14} />}
+            onClick={() => void copySessionId(session.id)}
+          >
+            {t("copySessionId")}
+          </Menu.Item>
           <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => setEditing(true)}>
             {t("renameSession")}
           </Menu.Item>

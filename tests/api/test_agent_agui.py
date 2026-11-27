@@ -833,3 +833,44 @@ def test_new_messages_keeps_only_unseen_user_input(
     """按用户输入切分: 与服务端历史逐条相等的开头被裁掉, 之后的内容整段算本轮新输入."""
     incoming = agent_agui._new_messages(_agui_messages(*replayed), _history(*history_texts))
     assert agent_agui._new_user_texts(incoming) == expected
+
+
+@pytest.mark.asyncio
+async def test_embedded_thinking_split_on_read(app: FastAPI, client: AsyncClient) -> None:
+    """上游把思维链与正文粘在同一段 token 里时, 读回放行必须把它拆成思考, 正文不显示标签."""
+    service = await service_of(app, client)
+    session = await service.create_session(title="embedded-thinking")
+    assert session.id is not None
+    _install_agent(service, _text_stream("<think>先算", "一下</think>结论是 42"))
+
+    await _run(client, session.id, [_user("多少")])
+
+    # 落盘仍是模型原样给出的正文; 切分发生在读回放行时, 历史会话因此无需重跑
+    stored = "".join(row.text for row in service.store_for(session.id).read_events() if isinstance(row, TextDeltaRow))
+    assert stored.startswith("<think>")
+
+    trace = await client.get(f"/agent/sessions/{session.id}/trace")
+    events = trace.json()["events"]
+    thoughts = [row["text"] for row in events if row["type"] == "reasoning_delta"]
+    texts = [row["text"] for row in events if row["type"] == "text_delta"]
+    assert "".join(thoughts) == "先算一下"
+    assert "".join(texts) == "结论是 42"
+    assert all("<think>" not in text and "</think>" not in text for text in texts)
+    # 思考与后段正文分属不同的块: 页面按 id 归块, 后段正文不会被并回思考
+    assert len({row["block_id"] for row in events if row["type"] == "reasoning_delta"}) == 1
+    assert len({row["block_id"] for row in events if row["type"] == "text_delta"}) == 1
+
+
+@pytest.mark.asyncio
+async def test_text_tail_after_thinking_is_flushed(app: FastAPI, client: AsyncClient) -> None:
+    """收尾时仍在待定区的尾巴必须落盘: 它是正文, 不是标签."""
+    service = await service_of(app, client)
+    session = await service.create_session(title="thinking-tail")
+    assert session.id is not None
+    _install_agent(service, _text_stream("<think>算一下</think>结论<"))
+
+    await _run(client, session.id, [_user("多少")])
+
+    trace = await client.get(f"/agent/sessions/{session.id}/trace")
+    texts = "".join(row["text"] for row in trace.json()["events"] if row["type"] == "text_delta")
+    assert texts == "结论<"

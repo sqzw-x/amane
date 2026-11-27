@@ -256,6 +256,7 @@ def build_feed_ops_capability() -> Capability[AgentDeps]:
     async def create_feed(ctx: RunContext[AgentDeps], request: AgentFeedCreate) -> dict[str, object]:
         """Create a feed and poll it once when the FeedService bridge is available.
 
+        ``name`` may be left empty: the first successful poll then writes the feed's own title.
         A failed first poll keeps the feed; the result then carries ``poll_error``.
         """
         try:

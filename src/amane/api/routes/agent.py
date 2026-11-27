@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from ...agent import AgentService
+from ...agent.reasoning import split_embedded_thinking
 from ...db.models import DEFAULT_SESSION_TITLE, AgentSession
 from ..deps import AgentDep, RepoDep
 from ..models.agent import (
@@ -88,9 +89,10 @@ async def get_agent_trace(session_id: int, service: AgentDep, repo: RepoDep) -> 
     if session is None:
         raise HTTPException(404, detail="会话不存在")
     store = service.store_for(session_id)
+    # 回放行在这里过一遍切分: 已落盘的内嵌 <think> 与直播同时被修正, 会话无需重跑
     return AgentTraceResponse(
         meta=store.read_meta(),
-        events=store.ui_events(),
+        events=list(split_embedded_thinking(store.ui_events())),
         turn_running=service.is_turn_running(session_id),
         last_seq=store.last_seq,
     )

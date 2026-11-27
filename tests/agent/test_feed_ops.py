@@ -267,3 +267,10 @@ async def test_delete_feed_and_items_require_approval(feed_deps: AgentDeps) -> N
     )
     assert deleted_feed == TOOL_OK
     assert await feed_deps.repo.get_feed(feed.id) is None
+
+
+def test_create_feed_name_documents_auto_title() -> None:
+    """`name` 可留空, 首次拉取会补上源自带标题: 只写在工具描述里, 字段说明不重复."""
+    description = _toolset().tools["create_feed"].description or ""
+    assert "left empty" in description and "own title" in description
+    assert "description" not in AgentFeedCreate.model_json_schema()["properties"]["name"]
