@@ -21,7 +21,7 @@ scrape 等 handler 只调用 `current()`; 其它代码仍可直接使用 `logger
 
 **请求日志打点** (`api/middleware.py`): `LoggingMiddleware` 是最外层用户中间件 (见 [api.md](api.md)), 每个请求一条 `request completed` (info); 端点和内层中间件的**未捕获异常**在 Starlette 500 兜底前记 `request failed` (error, 含 traceback) 再重抛. 手动 `HTTPException` 在 `ExceptionMiddleware` 被转成响应, 只打 `request completed` + 状态码, 不会重复打 `request failed`. 降噪路径 (`/api/ws`, `/favicon.ico`, `/api/system/desktop` — 后者是菜单栏每 3s 轮询) 降为 debug. handler 不自行打点请求结果.
 
-**打点约定**: Worker 在 `task started` 时打印 payload 全量; scrape 等 handler 用 `current().debug/info/...`. Recorder 活跃时, WebClient 对最终失败的 `request failed` 降为 debug — 结构化失败以 `http exchange` + `http/index.jsonl` 为准.
+**打点约定**: Worker 在 `task started` 时打印 payload 全量; scrape 等 handler 用 `current().debug/info/...`. WebClient 的 `request retry` 是 info — 重试属预期路径; 最终失败的 `request failed` 在 Recorder 活跃时降为 debug, 结构化失败以 `http exchange` + `http/index.jsonl` 为准.
 
 ## 数据库慢路径日志
 
