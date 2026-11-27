@@ -22,6 +22,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from ..db.models import Resource
 from .file_type import detect_media_type, is_image_mime
+from .images import probe_size
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -42,6 +43,19 @@ EXTRAFANART_CONCURRENCY = 4
 # 上游把已下架资源重定向到 200 的占位图 (DMM 的 now_printing, up-timely 的 noimage) 时不能算获取成功:
 # 否则该 URL 会被判为可用并前置, 前端最终显示占位图本身.
 _PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/", "/noimage.")
+
+
+def unscaled_size(record: Resource, path: Path) -> tuple[int, int] | None:
+    """判裁切用的尺寸: 超分就地放大盘上字节, 记下的原始尺寸优先于当场量.
+
+    只量盘上那份会让超分过的图在下次物化时按放大后的高度比较, 有缓存时阈值失效.
+    """
+    sr = (record.meta or {}).get("sr")
+    if isinstance(sr, dict):
+        orig = sr.get("orig_size")
+        if orig is not None:
+            return (int(orig[0]), int(orig[1]))
+    return probe_size(path)
 
 
 def _is_placeholder_url(url: str) -> bool:
@@ -382,6 +396,8 @@ class ResourceStore:
 
             # 临时文件按调用命名: 同一路径的并发超分不共用半截文件.
             tmp = src.with_name(f"{src.stem}.{uuid4().hex}.sr_tmp{src.suffix}")
+            # 超分前的尺寸在 producer 覆盖前量: 之后只剩放大后的字节, 判裁切的调用方无从还原.
+            orig_size = probe_size(src)
             try:
                 if record.meta and "sr" in record.meta and self._matches_record(src, record):
                     return UpscaleOutcome.SKIPPED
@@ -401,7 +417,7 @@ class ResourceStore:
             content_hash = self._hash_file(src)
             mime = detect_media_type(src)
             new_meta = dict(record.meta) if record.meta else {}
-            new_meta["sr"] = sr_args
+            new_meta["sr"] = {**sr_args, "orig_size": list(orig_size) if orig_size else None}
 
             async with self._session() as session:
                 result = await session.exec(select(Resource).where(Resource.url == record.url))

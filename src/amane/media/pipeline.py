@@ -25,7 +25,7 @@ from .images import (
     should_crop_poster,
     validate_crop_box,
 )
-from .resource_store import RESOURCE_URL_PREFIX
+from .resource_store import RESOURCE_URL_PREFIX, unscaled_size
 
 if TYPE_CHECKING:
     from ..config import HotSettings, SrConfig
@@ -94,6 +94,16 @@ async def _maybe_upscale(
     await store.upscale_in_place(resource, sr_args_dict(config.sr), producer)
 
 
+async def _sizes_unscaled(store: ResourceStore, locator: str | None, local: Path | None) -> tuple[int, int] | None:
+    """取判裁切用的尺寸: 超分过的资源按记下的原始尺寸, 否则当场量盘上那份."""
+    if locator is None or local is None:
+        return None
+    resource = await store.get_by_url(locator)
+    if resource is None:
+        return probe_size(local)
+    return unscaled_size(resource, local)
+
+
 async def _tall_poster_candidate(
     urls: list[str],
     store: ResourceStore,
@@ -113,13 +123,14 @@ async def _tall_poster_candidate(
         return winner, size
     if size is not None and size[1] / thumb_height >= skip_ratio:
         return winner, size
-    # 首位 (若有) 已下载过, 从它之后继续.
-    rest = urls[urls.index(winner) + 1 :] if winner is not None else urls
-    for url in rest:
+    # winner 为 None 时 _acquire_first 已经把整张表试过一遍, 再走一遍只会让死链的请求数翻倍.
+    if winner is None:
+        return winner, size
+    for url in urls[urls.index(winner) + 1 :]:
         local = await store.acquire(url, client)
         if local is None:
             continue
-        candidate = probe_size(local)
+        candidate = await _sizes_unscaled(store, url, local)
         if candidate is not None and candidate[1] / thumb_height >= skip_ratio:
             return url, candidate
     return winner, size
@@ -146,17 +157,19 @@ async def materialize_images(
     kinds = set(config.scraping.download_resources)
     crop_enabled = config.scraping.crop_poster and allows_poster_crop(content_type)
 
-    # 下载 thumb. 尺寸在超分之前量: 超分会把封面放大数倍, 裁切判据是来源给的原始比例.
+    # 下载 thumb. 裁切判据用超分前的尺寸: 超分就地放大盘上字节, 拿放大后的高度比会把来源海报一概判矮.
+    want_thumb = DownloadableResource.thumb in kinds
     thumb_winner: str | None = None
     thumb_src: str | None = None
     thumb_local: Path | None = None
-    if DownloadableResource.thumb in kinds:
+    if want_thumb:
         thumb_src, thumb_local = await _acquire_first(thumb_urls, store, client)
-        thumb_winner = thumb_src  # 下面的兜底裁剪会改写 thumb_src, 排序只认本步下载到的那个
-    # 裁剪需要 thumb 本地文件; 若未选 thumb 下载, 为判据与裁切临时 acquire 首个 thumb.
-    if thumb_local is None and thumb_urls and crop_enabled:
+        thumb_winner = thumb_src
+    # 裁剪需要 thumb 本地文件; 未选 thumb 下载时只为裁切临时 acquire. 判据要 poster 一起参与, 否则这一步
+    # 下载的 thumb 没有任何消费者.
+    if thumb_local is None and thumb_urls and crop_enabled and DownloadableResource.poster in kinds:
         thumb_src, thumb_local = await _acquire_first(thumb_urls, store, client)
-    thumb_size = probe_size(thumb_local) if thumb_local else None
+    thumb_size = await _sizes_unscaled(store, thumb_src, thumb_local)
 
     # 下载 poster; 候选偏矮则从 thumb 裁剪.
     poster_winner: str | None = None
@@ -165,7 +178,7 @@ async def materialize_images(
     cand_size: tuple[int, int] | None = None
     if DownloadableResource.poster in kinds:
         poster_winner, poster_candidate_local = await _acquire_first(poster_urls, store, client)
-        cand_size = probe_size(poster_candidate_local) if poster_candidate_local else None
+        cand_size = await _sizes_unscaled(store, poster_winner, poster_candidate_local)
         # 首位偏矮时按优先级继续找够高的候选: 字段优先级只决定尝试顺序, 不保证首位就是这批里最高的.
         if crop_enabled and thumb_size is not None:
             poster_winner, cand_size = await _tall_poster_candidate(

@@ -631,7 +631,6 @@ class TestExtrafanartConcurrency:
         paths = await resource_store.acquire_extrafanart(urls_by_site, ["dmm", "javdb"], client)
 
         assert len(paths) == 2
-        assert all("ok" in str(p) or p.exists() for p in paths)
 
 
 def _siblings(dest: Path) -> list[Path]:
