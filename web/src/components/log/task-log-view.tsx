@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
 import { getTaskLogOptions } from "@/client/@tanstack/react-query.gen";
 import { LogKvPairs } from "@/components/log/log-kv";
+import { LogRowBreak } from "@/components/log/log-row-break";
 import { LogTimestamp } from "@/components/log/log-timestamp";
 import { mergeTaskLogEntries, TASK_LOG_LIMIT } from "@/lib/task/log";
 import { type LogEntry, logLevelMantineColor, useLogStore } from "@/stores/logs";
@@ -104,12 +105,13 @@ function TaskLogRow({ entry }: { entry: LogEntry }) {
       >
         {entry.level}
       </Badge>
-      <Text size="xs" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
+      <Text component="span" size="xs" style={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
         <Text component="span" fw={700}>
           {entry.message}
         </Text>
         <LogKvPairs entry={entry} />
       </Text>
+      <LogRowBreak />
     </Group>
   );
 }
