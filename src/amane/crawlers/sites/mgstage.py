@@ -240,6 +240,9 @@ class MGStageCrawler(Crawler):
         return self._index
 
     async def _refresh_index(self) -> CatalogIndex | None:
+        """拉一次全量目录. 三份分片串行取: 同 host 的限速器桶容量为 1, 并发只是在它上面排队.
+        失败时每个分片各付一次超时 (首个失败即中断), 因此退避 600 秒, 不让每批刮削都重新等一遍.
+        """
         try:
             payloads = [await self.client.get_bytes(f"{self.base_url}/{shard}") for shard in _SITEMAP_SHARDS]
             index = await asyncio.to_thread(parse_catalog, payloads)
