@@ -69,11 +69,11 @@ def _parse_category(url: str) -> Category:
     return Category.OTHER
 
 
-def _digital_release_date(value: str) -> str | None:
-    """数字版配信日以日本标准时间 (UTC+09:00) 为准."""
+def _dmm_release_date(value: str) -> str | None:
+    """DMM 配信字段的 UTC 时间戳按日本标准时间 (UTC+09:00) 取日."""
     try:
         timestamp = datetime.fromisoformat(value.strip())
-        if timestamp.tzinfo is not None:
+        if timestamp.utcoffset() == timedelta(0):
             return timestamp.astimezone(timezone(timedelta(hours=9))).date().isoformat()
     except ValueError, OverflowError:
         pass
@@ -288,7 +288,7 @@ class DmmCrawler(Crawler):
             actors=film_actors(a.name for a in data.actresses if a.name),
             studio=data.maker.name if data.maker else None,
             publisher=data.label.name if data.label else None,
-            release=_digital_release_date(data.deliveryStartDate),
+            release=_dmm_release_date(data.deliveryStartDate),
             runtime=runtime,
             tags=[g.name for g in data.genres if g.name],
             series=data.series.name if data.series else None,
@@ -547,7 +547,7 @@ class DmmCrawler(Crawler):
             actors=film_actors(a.name for a in data.actresses if a.name),
             studio=data.maker.name if data.maker else None,
             publisher=data.label.name if data.label else None,
-            release=data.startDeliveryAt or None,
+            release=_dmm_release_date(data.startDeliveryAt),
             runtime=runtime,
             tags=[g.name for g in data.genres if g.name],
             series=data.series.name if data.series else None,
@@ -592,7 +592,7 @@ class DmmCrawler(Crawler):
             actors=film_actors((c.actorName for c in data.casts if c.actorName), gender=ActorGender.UNKNOWN),
             studio=studio,
             publisher=studio,
-            release=data.startPublicAt or None,
+            release=_dmm_release_date(data.startPublicAt),
             runtime=None,
             tags=[g.name for g in data.genres if g.name],
             plot=data.description or None,
