@@ -29,7 +29,8 @@ if TYPE_CHECKING:
 _BASE = "https://www.prestige-av.com"
 
 
-def _product(uuid: str) -> str:
+def _product_api_url(uuid: str) -> str:
+    """刮削取详情用的地址; 与面向用户的来源链接是两个地址."""
     return f"{_BASE}/api/product/{uuid}"
 
 
@@ -151,7 +152,7 @@ async def test_search_fallback_only_accepts_verified_numbers() -> None:
     assert await near_miss._search(SearchQuery(number="ABW-1250")) is None
 
     found = _crawler(_FakeWeb(_index_down(), {"api/search": _search_hits("TKTABW-125", "ABW-125")}))
-    assert await found._search(SearchQuery(number="ABW-125")) == _product("uuid-1")
+    assert await found._search(SearchQuery(number="ABW-125")) == _product_api_url("uuid-1")
 
     broken = _crawler(_FakeWeb(_index_down(), {"api/search": {"unexpected": "shape"}}))
     assert await broken._search(SearchQuery(number="ABW-125")) is None
@@ -171,7 +172,7 @@ async def test_unexpected_direct_failure_still_propagates() -> None:
 async def test_unexpected_sitemap_shape_degrades_to_direct() -> None:
     """索引正文不合读模型时降级到直连, 不记来源失败, 也不把坏正文留在实例上."""
     crawler = _crawler(_FakeWeb(b"<html>maintenance</html>", {"api/sku/item/": _direct_hit()}))
-    assert await crawler._search(SearchQuery(number="ABW-125")) == _product("uuid-direct")
+    assert await crawler._search(SearchQuery(number="ABW-125")) == _product_api_url("uuid-direct")
     assert crawler._index is None
 
 
@@ -192,7 +193,9 @@ async def test_stale_index_is_kept_when_refresh_fails() -> None:
     crawler._index_at = time.time() - 2 * 86_400  # 已过期, 检索会触发刷新
 
     # 索引端点已被打成失败, 仍能给出索引里的商品: 旧索引确实被保留了.
-    assert await crawler._search(SearchQuery(number="BGN-066")) == _product("838d1f17-9743-4a9d-a993-6d54fd07f0af")
+    assert await crawler._search(SearchQuery(number="BGN-066")) == _product_api_url(
+        "838d1f17-9743-4a9d-a993-6d54fd07f0af"
+    )
 
 
 @pytest.mark.asyncio
@@ -207,3 +210,65 @@ def test_empty_number_is_a_miss() -> None:
     web = _FakeWeb(_sitemap_payload())
     assert asyncio.run(_crawler(web)._search(SearchQuery(number=""))) is None
     assert web.calls == 0
+
+
+#: 详情应答里只有取舍与来源链接两处会变, 其余字段用最小可解析取值.
+_DETAIL: dict[str, object] = {
+    "uuid": "11111111-2222-3333-4444-555555555555",
+    "sku": [{"deliveryItemId": "ABW-125"}, {"deliveryItemId": "TKTABW-125"}],
+}
+_DETAIL_UUID = "11111111-2222-3333-4444-555555555555"
+
+
+@pytest.mark.asyncio
+async def test_source_url_points_at_the_goods_page() -> None:
+    """来源链接是商品页而不是 API: 浏览器打开 API 地址只能看到原始 JSON."""
+    crawler = _crawler(_FakeWeb(b"", {"api/product/": _DETAIL}))
+
+    meta = await crawler._scrape(_product_api_url(_DETAIL_UUID))
+
+    assert meta is not None
+    # skuId 取取舍键最优的那个 SKU 本身 (裸番号优先), 多 SKU 商品才能定位到本番号.
+    assert meta.source_url == f"{_BASE}/goods/{_DETAIL_UUID}?skuId=ABW-125"
+
+
+@pytest.mark.asyncio
+async def test_source_url_keeps_the_bundle_sku_when_bare_is_absent() -> None:
+    """只有特典 SKU 的商品: 来源链接带的是那个 SKU, 不是剥离出来的裸番号."""
+    detail = {"uuid": _DETAIL_UUID, "sku": [{"deliveryItemId": "TKTABP-546"}]}
+    crawler = _crawler(_FakeWeb(b"", {"api/product/": detail}))
+
+    meta = await crawler._scrape(_product_api_url(_DETAIL_UUID))
+
+    assert meta is not None
+    assert meta.number == "ABP-546"
+    assert meta.source_url == f"{_BASE}/goods/{_DETAIL_UUID}?skuId=TKTABP-546"
+
+
+@pytest.mark.asyncio
+async def test_source_url_is_absent_without_uuid() -> None:
+    """商品页地址由 uuid 组装; 缺 uuid 时不给链接, 也不退回到 API 地址."""
+    crawler = _crawler(_FakeWeb(b"", {"api/product/": {"sku": [{"deliveryItemId": "ABW-125"}]}}))
+
+    meta = await crawler._scrape(_product_api_url(_DETAIL_UUID))
+
+    assert meta is not None
+    assert meta.source_url is None
+    assert meta.external_id is None
+
+
+@pytest.mark.asyncio
+async def test_search_hands_the_api_url_to_scrape() -> None:
+    """检索交出 API 地址, 商品页地址是 HTML, 不能反过来喂给刮削."""
+    crawler = _crawler(_FakeWeb(_sitemap_payload(), {"api/product/": _DETAIL}))
+
+    api_url = await crawler._search(SearchQuery(number="ABW-125"))
+    # 索引命中的 uuid 与详情应答里的未必相同, 这里只断言交出的是 API 形态.
+    assert api_url is not None
+    assert api_url.startswith(f"{_BASE}/api/product/")
+
+    meta = await crawler._scrape(_product_api_url(_DETAIL_UUID))
+
+    assert meta is not None
+    assert meta.source_url is not None
+    assert "/goods/" in meta.source_url
