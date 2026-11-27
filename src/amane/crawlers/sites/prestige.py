@@ -147,19 +147,20 @@ def rank_sku(sku_id: str) -> tuple[int, str]:
     return (0, sku_id) if prefix is None else (list(SkuPrefix).index(prefix) + 1, sku_id)
 
 
-def preferred_number(sku_ids: Iterable[str]) -> str | None:
-    """多个 SKU 中优先级最高的那个的番号: 裸番号优先, 其后按前缀顺序; 无 SKU 时为 ``None``."""
-    candidates = [sku_id for sku_id in sku_ids if sku_id]
-    return strip_sku_prefix(min(candidates, key=rank_sku)) if candidates else None
-
-
 def preferred_sku(sku_ids: Iterable[str]) -> str | None:
     """多个 SKU 中优先级最高的那个 SKU 本身 (不剥离前缀); 无 SKU 时为 ``None``.
 
     商品详情页按 SKU 定位, 而站点售卖的常是同捆特典 SKU (``TKTABW-125``), 裸番号未必在售.
+    取舍键只有 ``rank_sku`` 一份, ``preferred_number`` 由它派生.
     """
     candidates = [sku_id for sku_id in sku_ids if sku_id]
     return min(candidates, key=rank_sku) if candidates else None
+
+
+def preferred_number(sku_ids: Iterable[str]) -> str | None:
+    """多个 SKU 中优先级最高的那个的番号: 裸番号优先, 其后按前缀顺序; 无 SKU 时为 ``None``."""
+    sku_id = preferred_sku(sku_ids)
+    return strip_sku_prefix(sku_id) if sku_id is not None else None
 
 
 def build_index(entries: Sequence[SitemapEntry]) -> SitemapIndex:
@@ -381,11 +382,12 @@ class PrestigeCrawler(Crawler):
             return None
 
         # 番号取同捆特典 SKU 与包装 SKU 中优先级最高的那个, 剥离前缀后即原番号; 与检索同一套取舍规则.
+        # 保留 SKU 本身: 商品页按 SKU 定位, 裸番号未必在售.
         sku_list: list[dict[str, Any]] = data.get("sku") or []
-        sku_ids = [str(sku.get("deliveryItemId", "")) for sku in sku_list]
-        number = preferred_number(sku_ids)
-        if not number:
+        sku_id = preferred_sku(str(sku.get("deliveryItemId", "")) for sku in sku_list)
+        if sku_id is None:
             return None
+        number = strip_sku_prefix(sku_id)
 
         title = data.get("title")
         release = data.get("mgsStartAt") or data.get("createdAt")
@@ -452,7 +454,7 @@ class PrestigeCrawler(Crawler):
         # 商品页地址由 uuid 组装; 缺 uuid 时拼不出可读链接, 不给而不是退回 API 地址.
         uuid = data.get("uuid")
         external_id = uuid if isinstance(uuid, str) and uuid else None
-        source_url = None if external_id is None else self._goods_url(external_id, preferred_sku(sku_ids) or number)
+        source_url = None if external_id is None else self._goods_url(external_id, sku_id)
 
         return MediaMetadata(
             number=number,
