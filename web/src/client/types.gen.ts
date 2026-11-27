@@ -5758,6 +5758,10 @@ export type UserMessageRow = {
      * Text
      */
     text: string;
+    /**
+     * Message Id
+     */
+    message_id?: string | null;
 };
 
 /**

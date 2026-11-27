@@ -134,7 +134,8 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
       case "user_message": {
         flush();
         messages.push({
-          id: `trace-u-${messages.length}`,
+          // 沿用服务端记下的客户端消息 id: 回放被再次送回服务端时, 它据此认出这已是一条旧输入.
+          id: row.message_id ?? `trace-u-${row.seq ?? messages.length}`,
           role: "user",
           content: [{ type: "text", text: row.text }],
         });

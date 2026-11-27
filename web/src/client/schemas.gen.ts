@@ -10957,6 +10957,17 @@ export const UserMessageRowSchema = {
         text: {
             type: 'string',
             title: 'Text'
+        },
+        message_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Message Id'
         }
     },
     additionalProperties: false,

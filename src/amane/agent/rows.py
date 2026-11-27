@@ -37,6 +37,11 @@ class UserMessageRow(RowBase):
 
     type: Literal["user_message"]
     text: str
+    message_id: str | None = None
+    """客户端给的 AG-UI 消息 id; 页面回放时沿用它, 服务端据此认出重放里的同一条输入.
+
+    缺省是早于此字段写入的行, 那时只能按文本与位置比对.
+    """
 
 
 class ReasoningDeltaRow(RowBase):
