@@ -437,6 +437,44 @@ class TestMediaFileRepo:
         count = await repo.count_media_files(status=status_filter, search=search)
         assert count == expected_count
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_absorbs_occupant(self, repo: Repository):
+        """目标已被另一行占用时交回那一行, 不写本行也不撞 path 的 UNIQUE."""
+        first = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        second = await repo.create_media_file(library_id=1, path="/video/B.mp4", number="B")
+        assert first.id is not None and second.id is not None
+
+        write = await repo.update_media_file_path(second.id, "/video/A.mp4")
+
+        assert write.updated is None
+        assert write.occupant is not None and write.occupant.id == first.id
+        kept = await repo.get_media_file(second.id)
+        assert kept is not None and kept.path == "/video/B.mp4"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_to_own_path_rewrites(self, repo: Repository):
+        """目标就是本行当前路径时照写: 占用判定不能把本行当成障碍."""
+        media = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        assert media.id is not None
+
+        write = await repo.update_media_file_path(media.id, "/video/A.mp4")
+
+        assert write.occupant is None
+        assert write.updated is not None and write.updated.path == "/video/A.mp4"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_after_row_deleted(self, repo: Repository):
+        """本行已被删除时不重建记录: 写回拿到的是不存在的行."""
+        media = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        assert media.id is not None
+        assert await repo.delete_media_file(media.id)
+
+        write = await repo.update_media_file_path(media.id, "/video/B.mp4")
+
+        assert write.updated is None
+        assert write.occupant is None
+        assert await repo.get_media_file(media.id) is None
+
 
 class _RecordingMediaHook:
     """记录条目图片变化通知; 用来断言「没有变化」不触发向量重建."""

@@ -29,7 +29,7 @@ r18 库由项目导入 / 管理但 schema 不受我们控制, **不能纳入 Ale
 - 会话在进入该调用之前不得已有未结束的数据库事务, 否则 `BEGIN IMMEDIATE` 失败.
 - 该写法依赖驱动不自行发出 `BEGIN`; 驱动或方言改为显式发出时失效.
 - 番号比较一律经 `src/amane/db/models.py::metadata_number_predicate`, 才能命中 `ix_metadata_number`.
-- 同类窗口的另一处: `src/amane/db/repos/media.py::MediaRepoMixin.create_media_file` 直接提交, 两条并行 `REFRESH` 都会判定路径未见, 后提交者违反 `media_files.path` 的 UNIQUE 约束, 整个 `REFRESH` 失败且文件不入库. 整理改 `MediaFile.path` 时占用判定与写入须同处一个事务 (`update_media_file_path`), 先查后写会让整理整体失败; 监听侧的改路径尚未收进该方法.
+- 同类窗口的另一处: `src/amane/db/repos/media.py::MediaRepoMixin.create_media_file` 直接提交, 两条并行 `REFRESH` 都会判定路径未见, 后提交者违反 `media_files.path` 的 UNIQUE 约束, 整个 `REFRESH` 失败且文件不入库. 整理改 `MediaFile.path` 时占用判定与写入须同处一个事务 (`update_media_file_path`), 先查后写会让整理整体失败; 监听侧另走 `update_media_file` 的裸 UPDATE.
 
 连接级 PRAGMA (WAL / `synchronous=NORMAL` / `busy_timeout` / 外键) 只能在 `db/engine.py` 的连接钩子里逐连接下发, 别处另开业务引擎会退回驱动默认. 写锁被占用时连接等待至多 `busy_timeout` 才报 `database is locked`, 临界区短于该值即不失败. `synchronous=NORMAL` 的取舍限于 WAL 已开启: 掉电丢最近若干已提交事务而不损坏库, 换掉逐笔 fsync 拉长的持锁时间.
 

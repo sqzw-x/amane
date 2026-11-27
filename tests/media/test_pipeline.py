@@ -475,7 +475,63 @@ async def test_posters_cached_after_upscale_still_skip_crop(
 
     thumb = await resource_store.get_by_url("https://s/t.jpg")
     assert thumb is not None and thumb.meta is not None
-    assert thumb.meta["sr"]["orig_size"] == [1000, 706]  # 原始尺寸随超分一并记下
+    assert thumb.meta["sr"]["scale"] == 2  # 判裁切据它从盘上尺寸除回
+
+
+@pytest.mark.asyncio
+async def test_short_poster_cached_after_upscale_still_crops(
+    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """候选已被超分并缓存时仍按超分前的尺寸判矮: 盘上放大版会让它冒充够高而漏裁.
+
+    首轮没有封面, 候选 400x600 走到「不裁」分支被超分成 800x1200 并缓存. 次轮来了一张
+    1300x900 的封面 (最长边 ≥ 1200, 不超分): 判据若量盘上那份, 1200/900 ≈ 1.33 判成够高,
+    而来源比例 600/900 ≈ 0.67 本该裁切.
+    """
+    from amane.sr.run import SrResult
+
+    async def fake_run_sr(inp: Path, out: Path, cfg: object, data_dir: Path, **kwargs: object) -> SrResult:
+        with Image.open(inp) as img:
+            Image.new("RGB", (img.width * 2, img.height * 2), "green").save(out)
+        return SrResult(success=True, output=out)
+
+    monkeypatch.setattr(pipeline_mod, "run_SR", fake_run_sr)
+
+    client = FakeClient({"https://s/t.jpg": (1300, 900), "https://s/p.jpg": (400, 600)})
+    cfg = HotSettings(
+        sr=SrConfig(enabled=True),
+        scraping=ScrapingConfig(field_priority={}, poster_crop_skip_ratio=0.9),
+    )
+
+    # 首轮无封面: 无判据可依, 候选原样保留并被超分.
+    await materialize_images(
+        ["https://s/p.jpg"],
+        [],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+    poster = await resource_store.get_by_url("https://s/p.jpg")
+    assert poster is not None and poster.meta is not None
+    assert poster.meta["sr"]["scale"] == 2  # 判裁切按它除回 400x600
+    assert Image.open(resource_store.full_path(poster)).size == (800, 1200)
+
+    # 次轮封面到位, 候选命中缓存: 判据须用来源比例而不是盘上放大版.
+    out = await materialize_images(
+        ["https://s/p.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+    assert len(out.poster_urls) == 1
+    assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX)  # 从封面裁, 没有留下放大版候选
 
 
 @pytest.mark.asyncio

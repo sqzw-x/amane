@@ -1311,32 +1311,6 @@ async def test_commit_organized_media_file(repo: Repository, tmp_path: Path, cas
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_commit_organized_media_file_survives_row_deleted_first(repo: Repository, tmp_path: Path) -> None:
-    """本行在改 path 前已被删除: 不抛, 也不重建记录.
-
-    watcher 的删除与整理的写回并发时, 写回拿到的是已不存在的行; 这里覆盖那条更窄的路径 —
-    目标路径的占用判定已通过, 写回时行却没了.
-    """
-    lib_root = tmp_path / "lib"
-    lib_root.mkdir()
-    lib = await repo.create_library(name="t", path=str(lib_root), write_nfo=False)
-    assert lib.id is not None
-    src = lib_root / "incoming" / "NSFS-041.mp4"
-    src.parent.mkdir()
-    src.write_bytes(b"video")
-    media = await repo.create_media_file(lib.id, path=str(src), number="NSFS-041")
-    assert media.id is not None
-    media_id = media.id
-    await repo.delete_media_file(media_id)
-
-    result = await repo.update_media_file_path(media_id, str(lib_root / "Studio" / "NSFS-041.mp4"))
-
-    assert result.updated is None
-    assert result.occupant is None
-    assert await repo.get_media_file(media_id) is None
-
-
-@pytest.mark.asyncio(loop_scope="function")
 async def test_commit_organized_media_file_absorbs_concurrent_collision(repo: Repository, tmp_path: Path) -> None:
     """同一目标被两行指向时后到的一行接管占用行, 不撞 path 的 UNIQUE.
 

@@ -5,13 +5,16 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 
+from amane.db.models import Resource
 from amane.media import ResourceStore, UpscaleOutcome, derived_locator
 from amane.media.resource_store import (
     EXTRAFANART_CONCURRENCY,
     RESOURCE_URL_PREFIX,
     _is_placeholder_url,
     internal_url_hash,
+    unscaled_size,
 )
 from amane.net.egress import EgressPolicy
 from amane.net.http import RateLimiters, WebClient
@@ -578,6 +581,49 @@ class TestPlaceholderRedirect:
         assert record.size == resource_store.full_path(record).stat().st_size
 
 
+class TestUnscaledSize:
+    """判裁切取的尺寸: 盘上那份是超分后的字节, 按记录的倍率除回超分前."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("meta", "image", "expect"),
+        [
+            ({"sr": {"scale": 2}}, (200, 120), (100, 60)),  # 正常整除
+            ({"sr": {"scale": 4}}, (1252, 1908), (313, 477)),  # 奇数尺寸也精确除回
+            ({"sr": {"model": None, "scale": 2}}, (200, 120), (100, 60)),  # 旧格式 model:null 仍有 scale
+            ({"sr": {"scale": 0}}, (200, 120), (200, 120)),  # 倍率非正: 退回盘上
+            ({"sr": {"scale": -2}}, (200, 120), (200, 120)),  # 负倍率同样退回
+            ({"sr": {"tool": "waifu2x"}}, (200, 120), (200, 120)),  # 缺倍率: 退回盘上
+            ({"sr": "garbage"}, (200, 120), (200, 120)),  # 存量脏值: sr 非 dict, 按未记处理
+            ({}, (200, 120), (200, 120)),  # 从未超分
+            ({"sr": {"scale": 500}}, (200, 120), (200, 120)),  # 除回得 0: 数据脏, 退回盘上
+        ],
+    )
+    async def test_divides_by_scale_then_falls_back_to_disk(
+        self,
+        tmp_path: Path,
+        meta: dict[str, Any],
+        image: tuple[int, int],
+        expect: tuple[int, int],
+    ) -> None:
+        src = tmp_path / "resources" / "img.jpg"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", image, "blue").save(src)
+        record = Resource(url="https://s/i.jpg", file_path="img.jpg", meta=meta)
+
+        assert unscaled_size(record, src) == expect
+
+    @pytest.mark.asyncio
+    async def test_corrupt_file_has_no_size(self, tmp_path: Path) -> None:
+        """读不出尺寸 (破损图) 时返回 None, 由调用方按无判据处理, 不退回假尺寸."""
+        src = tmp_path / "resources" / "img.jpg"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(b"not-an-image")
+        record = Resource(url="https://s/i.jpg", file_path="img.jpg", meta={"sr": {"scale": 2}})
+
+        assert unscaled_size(record, src) is None
+
+
 class TestExtrafanartConcurrency:
     """剧照按站点整批下载, 每张写完都要借连接落记录; 不设上限时一个站点就能占满连接池."""
 
@@ -608,6 +654,7 @@ class TestExtrafanartConcurrency:
 
         assert len(paths) == len(urls)
         assert peak <= EXTRAFANART_CONCURRENCY
+        assert peak > 1  # 上限是限流不是串行: 改成 1 时上一行仍绿, 这一行才钉得住
 
     @pytest.mark.asyncio
     async def test_failed_site_falls_through_to_next(self, resource_store: ResourceStore) -> None:

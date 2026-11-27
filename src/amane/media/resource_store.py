@@ -46,16 +46,22 @@ _PLACEHOLDER_PATH_MARKERS: tuple[str, ...] = ("/now_printing/", "/noimage.")
 
 
 def unscaled_size(record: Resource, path: Path) -> tuple[int, int] | None:
-    """判裁切用的尺寸: 超分就地放大盘上字节, 记下的原始尺寸优先于当场量.
+    """判裁切用的尺寸: 超分就地放大盘上字节, 按记录的倍率除回超分前的尺寸.
 
-    只量盘上那份会让超分过的图在下次物化时按放大后的高度比较, 有缓存时阈值失效.
+    只量盘上那份会让超分过的图在下次物化时按放大后的高度比较, 有缓存时阈值失效. 超分输出是
+    精确整数倍, 除回与当初记下等价, 且对升级前就已超分的行同样成立.
+
+    倍率缺失或非正、盘上读不出尺寸、除回得 0, 一律退回量盘上那份.
     """
+    size = probe_size(path)
+    if size is None:
+        return None
     sr = (record.meta or {}).get("sr")
-    if isinstance(sr, dict):
-        orig = sr.get("orig_size")
-        if orig is not None:
-            return (int(orig[0]), int(orig[1]))
-    return probe_size(path)
+    scale = sr.get("scale") if isinstance(sr, dict) else None
+    if not isinstance(scale, int) or scale <= 0:
+        return size
+    reduced = (size[0] // scale, size[1] // scale)
+    return reduced if reduced[0] > 0 and reduced[1] > 0 else size
 
 
 def _is_placeholder_url(url: str) -> bool:
@@ -396,8 +402,6 @@ class ResourceStore:
 
             # 临时文件按调用命名: 同一路径的并发超分不共用半截文件.
             tmp = src.with_name(f"{src.stem}.{uuid4().hex}.sr_tmp{src.suffix}")
-            # 超分前的尺寸在 producer 覆盖前量: 之后只剩放大后的字节, 判裁切的调用方无从还原.
-            orig_size = probe_size(src)
             try:
                 if record.meta and "sr" in record.meta and self._matches_record(src, record):
                     return UpscaleOutcome.SKIPPED
@@ -417,7 +421,7 @@ class ResourceStore:
             content_hash = self._hash_file(src)
             mime = detect_media_type(src)
             new_meta = dict(record.meta) if record.meta else {}
-            new_meta["sr"] = {**sr_args, "orig_size": list(orig_size) if orig_size else None}
+            new_meta["sr"] = sr_args
 
             async with self._session() as session:
                 result = await session.exec(select(Resource).where(Resource.url == record.url))
