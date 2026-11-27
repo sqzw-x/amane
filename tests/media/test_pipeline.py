@@ -96,6 +96,64 @@ async def test_poster_cropped_when_candidate_small(resource_store: ResourceStore
 
 
 @pytest.mark.asyncio
+async def test_poster_candidate_taller_later_in_priority_wins(resource_store: ResourceStore, tmp_path: Path):
+    """首位候选偏矮时按优先级继续找: 字段优先级只决定尝试顺序, 不保证首位就是够高的那张.
+
+    封面 1000x706, 阈值 0.5: p1 的 400/706 ≈ 0.57 实际够高; 换用 300x300 作首位 (0.42 偏矮),
+    p2 的 422x600 (0.85) 才是应当保留的那张.
+    """
+    client = FakeClient(
+        {
+            "https://s/t.jpg": (1000, 706),
+            "https://s/p1.jpg": (300, 300),
+            "https://s/p2.jpg": (422, 600),
+        }
+    )
+    cfg = HotSettings(scraping=ScrapingConfig(field_priority={}, poster_crop_skip_ratio=0.5))
+
+    out = await materialize_images(
+        ["https://s/p1.jpg", "https://s/p2.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+
+    assert out.poster_urls == ["https://s/p2.jpg", "https://s/p1.jpg"]  # 够高的那张前置
+    assert out.poster_urls[0] == "https://s/p2.jpg"  # 没有退回裁切封面
+
+
+@pytest.mark.asyncio
+async def test_poster_candidates_all_short_still_crop(resource_store: ResourceStore, tmp_path: Path):
+    """全部候选都偏矮时照旧裁切封面; 逐个比过一遍不等于总能挑出一张."""
+    client = FakeClient(
+        {
+            "https://s/t.jpg": (1000, 706),
+            "https://s/p1.jpg": (300, 300),
+            "https://s/p2.jpg": (300, 340),
+        }
+    )
+    cfg = HotSettings(scraping=ScrapingConfig(field_priority={}, poster_crop_skip_ratio=0.5))
+
+    out = await materialize_images(
+        ["https://s/p1.jpg", "https://s/p2.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+
+    assert len(out.poster_urls) == 1
+    assert out.poster_urls[0].startswith(pipeline_mod.RESOURCE_URL_PREFIX)
+
+
+@pytest.mark.asyncio
 async def test_poster_external_when_candidate_tall(resource_store: ResourceStore, tmp_path: Path):
     """poster 候选够高 → 不裁剪, poster 记外部 URL."""
     client = FakeClient(
@@ -115,6 +173,46 @@ async def test_poster_external_when_candidate_tall(resource_store: ResourceStore
         content_type=ContentType.CENSORED,
     )
     assert out.poster_urls == ["https://s/p.jpg"]  # 外部列表原样
+
+
+@pytest.mark.asyncio
+async def test_poster_size_probed_before_cover_upscale(
+    resource_store: ResourceStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """裁切判据按封面超分前的尺寸: 超分会把封面放大数倍, 拿超分后的高度比会把来源海报一概判矮.
+
+    封面 1000x706, 海报 422x600, 阈值 0.5: 600 / 706 ≈ 0.85 高于阈值, 应当保留来源海报.
+    """
+    from amane.sr.run import SrResult
+
+    async def fake_run_sr(inp: Path, out: Path, cfg: object, data_dir: Path, **kwargs: object) -> SrResult:
+        with Image.open(inp) as img:
+            Image.new("RGB", (img.width * 2, img.height * 2), "green").save(out)
+        return SrResult(success=True, output=out)
+
+    monkeypatch.setattr(pipeline_mod, "run_SR", fake_run_sr)
+
+    client = FakeClient({"https://s/t.jpg": (1000, 706), "https://s/p.jpg": (422, 600)})
+    cfg = HotSettings(
+        sr=SrConfig(enabled=True),
+        scraping=ScrapingConfig(field_priority={}, poster_crop_skip_ratio=0.5),
+    )
+
+    out = await materialize_images(
+        ["https://s/p.jpg"],
+        ["https://s/t.jpg"],
+        [],
+        resource_store,
+        cast("WebClient", client),
+        cfg,
+        tmp_path,
+        content_type=ContentType.CENSORED,
+    )
+
+    assert out.poster_urls == ["https://s/p.jpg"]  # 来源海报保留, 没有从封面裁切
+    thumb = await resource_store.get_by_url("https://s/t.jpg")
+    assert thumb is not None and thumb.meta is not None and "sr" in thumb.meta
+    assert Image.open(resource_store.full_path(thumb)).size == (2000, 1412)  # 封面仍照常超分
 
 
 @pytest.mark.asyncio
