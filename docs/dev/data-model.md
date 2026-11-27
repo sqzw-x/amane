@@ -47,8 +47,7 @@ Metadata 列表与 `/media` 文件行的角标与筛选: 有码 / 无码取条�
 |----------|---------|----------|
 | 单源字段 (`title`, `studio`, `plot`, ...) | 沿链取首个非空值; 列表型 (演员 / 标签 / 导演) 整份列表取首个非空 | 覆盖大多数场景 | 覆盖大多数场景 |
 | 聚合类 URL (`poster_urls`, `thumb_urls`, ...) | list, 按字段站点顺序拼接各站非空值 (相同 URL 保留首次), 物化后成功者前置 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
-| `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
-| `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
+| `extrafanart_urls` / `scores` | `dict[site, …]` 按站点分组; **首项即取值** (剧照集与单值评分都取第一个站点) | 集合与量表都站点特异. 顺序参与真值: 剧照的键序变化必须落库并通知下游; 评分的键序变化只需落库 |
 | `raw` | `{site: {field: value}}` 原始快照 | 支持离线重新聚合与站点级复用 (见 [task-system.md](task-system.md)) |
 
 长文本 (`plot` / 演员 `overview`) 存**纯文本**: 上游的 HTML 片段、HTML 实体、异体空白 (NBSP / 全角空格)、XML 非法字符在入库前归一, HTML 换行与段落变成 `\n` 与空行. 归一必须幂等, 只在聚合输出与落库写入两处发生 (见 `utils/text.py`), 因此 `raw` 快照、merge 输入与库内值是同一份规范文本; 消费端 (NFO 写出、前端) 不识别 HTML. 存量行在下次写入时被清理.

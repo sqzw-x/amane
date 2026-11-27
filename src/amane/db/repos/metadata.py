@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy import ColumnElement, distinct, or_, text, update
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -64,9 +65,33 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     return {**fields, "plot": normalize_long_text(plot)}
 
 
-def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
-    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
-    return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
+def _image_signature(
+    metadata: Metadata,
+) -> tuple[list[str], list[str], list[tuple[str, list[str]]]]:
+    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入).
+
+    剧照按站点分组且首站即取值, 语义索引只取第一个有落盘图片的站点
+    (见 ``semantic/service.py::_resolve_images``), 因此键序参与真值, 比较不能交给 dict 的 ``==``.
+    """
+    return (metadata.poster_urls, metadata.thumb_urls, list(metadata.extrafanart_urls.items()))
+
+
+def _flag_ordered(instance: Metadata, keys: Iterable[str]) -> None:
+    """让顺序敏感列的键序变化触发 UPDATE.
+
+    SQLAlchemy 判列是否变化用 ``==``, 而 dict 相等不看顺序; 首项即取值的列 (``_ORDERED_MAPPING_COLUMNS``)
+    因此必须显式标脏, 否则改了字段优先级重新刮削仍读到旧的首站.
+    """
+    for key in keys:
+        if key in _ORDERED_MAPPING_COLUMNS:
+            flag_modified(instance, key)
+
+
+def _write_columns(instance: Metadata, fields: MetadataFields) -> None:
+    """逐列写入, 再按 ``_ORDERED_MAPPING_COLUMNS`` 标脏."""
+    for key, value in fields.items():
+        setattr(instance, key, value)
+    _flag_ordered(instance, fields)
 
 
 def _merge_raw_snapshots(
@@ -122,6 +147,9 @@ _LOCK_FIELD_COLUMN: dict[MetadataField, str] = {
     MetadataField.SCORE: "scores",
 }
 _LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column in _LOCK_FIELD_COLUMN.items()}
+
+#: 首项即取值、因此顺序参与真值的映射列. 写入这两列时, 仅键序变化也要落库.
+_ORDERED_MAPPING_COLUMNS: frozenset[str] = frozenset({"extrafanart_urls", "scores"})
 
 
 def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
@@ -434,8 +462,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 incoming_raw = fields.get("raw")
                 if merge_raw and incoming_raw is not None:
                     fields["raw"] = {**(existing.raw or {}), **incoming_raw}
-                for key, value in fields.items():
-                    setattr(existing, key, value)
+                _write_columns(existing, fields)
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
@@ -527,6 +554,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 metadata.field_sources = updates["field_sources"]
             if "raw" in updates:
                 metadata.raw = updates["raw"]
+            _flag_ordered(metadata, updates)
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
