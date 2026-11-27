@@ -24,7 +24,6 @@ from ..models import FetchOptions, MediaMetadata, SearchQuery, film_actors
 from ..parsing import (
     extract_all_texts,
     extract_text,
-    fold_number,
     number_variants,
     select_number_index,
     without_leading_digits,
@@ -64,9 +63,10 @@ class CatalogUnusable(Exception):
 
 @dataclass(frozen=True, slots=True)
 class CatalogIndex:
-    """商品目录: 去掉开头数字段的折叠番号 → 带该数字段的完整番号 (可能不止一个).
+    """商品目录: 去掉开头数字段的折叠番号 → 站点上的完整番号 (可能不止一个).
 
-    裸番号不入索引, 由直连那一档处理. 同一尾部对应多个番号时全部保留, 由调用方判为无法确认.
+    裸番号同样入索引: 站点上 ``CHA-010`` 与 ``031CHA-010`` 是两部不同作品, 只收带数字段的会让裸番号
+    被同尾号的那部抢走. 同一尾部对应多个番号时全部保留, 由 ``select_number_index`` 取舍.
     """
 
     by_tail: Mapping[str, tuple[str, ...]]
@@ -117,10 +117,7 @@ def parse_catalog(payloads: Sequence[bytes]) -> CatalogIndex:
             raise CatalogUnusable("sitemap shard carries no <loc>")
         for match in _LOC.finditer(raw):
             number = match.group(1).decode("utf-8", "replace")
-            key = without_leading_digits(number)
-            if key == fold_number(number):
-                continue
-            numbers = found.setdefault(key, [])
+            numbers = found.setdefault(without_leading_digits(number), [])
             if number not in numbers:
                 numbers.append(number)
     return CatalogIndex(by_tail={key: tuple(numbers) for key, numbers in found.items()})

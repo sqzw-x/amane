@@ -58,18 +58,19 @@ def test_poster_url(cover_url: str, expected: str | None) -> None:
 @pytest.mark.parametrize(
     ("number", "expected"),
     [
-        # 开头带数字段: 去掉数字段后可对齐裸番号写法.
+        # 开头带数字段: 去掉数字段后对齐裸番号写法.
         ("STKO-005", "107STKO-005"),
         ("107STKO-005", "107STKO-005"),
-        # 裸番号不进索引: 由直连那一档处理.
-        ("ABF-355", None),
-        ("SIRO-3759", None),
+        # 裸番号在目录里也有条目时命中的是自己.
+        ("ABF-355", "ABF-355"),
+        ("SIRO-3759", "SIRO-3759"),
     ],
 )
 def test_catalog_keys_on_tail(number: str, expected: str | None) -> None:
     index = parse_catalog([_urlset("107STKO-005", "ABF-355", "SIRO-3759")])
     found = index.candidates(number)
-    assert (found[0] if found else None) == expected
+    picked = select_number_index(found, number)
+    assert (found[picked] if picked is not None else None) == expected
 
 
 def test_catalog_keeps_ambiguous_entries() -> None:
@@ -109,9 +110,22 @@ def test_catalog_rejects_unusable(payloads: list[bytes], message: str) -> None:
 
 
 def test_catalog_without_leading_digits_is_empty_not_unusable() -> None:
-    """目录全都是裸番号时索引为空, 不是失败: 那是「目录里没有这类番号」."""
+    """目录全是裸番号时照常建索引, 不是失败: 那是「目录里没有带数字段的番号」."""
     index = parse_catalog([_urlset("ABF-355", "SIRO-3759")])
-    assert index.candidates("ABF-355") == ()
+    assert index.candidates("ABF-355") == ("ABF-355",)
+    assert index.candidates("STKO-005") == ()
+
+
+def test_catalog_does_not_let_bare_number_be_taken_by_shared_tail() -> None:
+    """裸番号与同尾号的带数字段条目在站点上是两部作品, 裸番号须命中的是自己."""
+    # 真实目录里 ``CHA-010`` 与 ``031CHA-010`` 是两个不同的详情页.
+    index = parse_catalog([_urlset("CHA-010", "031CHA-010", "JNT-001", "390JNT-001")])
+    assert index.candidates("CHA-010") == ("CHA-010", "031CHA-010")
+    assert select_number_index(index.candidates("CHA-010"), "CHA-010") == 0
+    assert select_number_index(index.candidates("JNT-001"), "JNT-001") == 0
+    # 站点的裸番号条目确实不存在时, 只写了数字段的入参仍由同尾号那条接住.
+    assert index.candidates("031CHA-010") == ("CHA-010", "031CHA-010")
+    assert select_number_index(index.candidates("031CHA-010"), "031CHA-010") == 1
 
 
 def _index_down() -> RequestError:
