@@ -3,11 +3,58 @@
 分类目录改写、候选顺序与 cid 形态是 DMM 详情页与 r18 dump 共用的契约; 页面解析走 TOML 数据驱动.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from parsel import Selector
 
-from amane.crawlers.sites.dmm import DmmCrawler, _extrafanart_urls
+from amane.crawlers.http import HttpClient
+from amane.crawlers.sites.dmm import DmmCrawler, _dmm_release_date, _extrafanart_urls
 from amane.crawlers.sites.dmm_cdn import image_candidates, poster_candidates
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-10-22T15:00:00Z", "2026-10-23"),
+        ("2025-12-31T15:00:00+00:00", "2026-01-01"),
+        ("2023-10-19T01:00:00Z", "2023-10-19"),
+        ("2026-10-23T00:00:00+09:00", "2026-10-23"),
+        ("2026-10-22T23:00:00+08:00", "2026-10-22"),
+        ("2026-10-23T00:00:00", "2026-10-23"),
+        ("2026-10-23", "2026-10-23"),
+        ("", None),
+        ("2026-02-30T15:00:00Z", None),
+    ],
+)
+def test_dmm_release_date(value: str, expected: str | None) -> None:
+    assert _dmm_release_date(value) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("url", "response"),
+    [
+        (
+            "https://video.dmm.co.jp/av/content/?id=snos00420",
+            {"data": {"ppvContent": {"title": "SNOS-420", "deliveryStartDate": "2026-10-22T15:00:00Z"}}},
+        ),
+        (
+            "https://tv.dmm.co.jp/detail/?content=ssis00497",
+            {"data": {"fanzaTvPlus": {"content": {"title": "SSIS-497", "startDeliveryAt": "2026-10-22T15:00:00Z"}}}},
+        ),
+        (
+            "https://tv.dmm.com/vod/detail/?seasonId=123",
+            {"data": {"video": {"titleName": "DMM TV", "startPublicAt": "2026-10-22T15:00:00Z"}}},
+        ),
+    ],
+)
+async def test_graphql_release_dates_are_normalized(url: str, response: dict[str, object]) -> None:
+    client = AsyncMock(spec=HttpClient)
+    client.post_json.return_value = response
+    metadata = await DmmCrawler(client)._scrape(url)
+    assert metadata is not None
+    assert metadata.release == "2026-10-23"
 
 
 @pytest.mark.parametrize(
