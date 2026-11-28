@@ -41,8 +41,9 @@ from ag_ui.core import (
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import JsonValue
-from pydantic_ai import AgentRunResult, DeferredToolRequests, RunContext
+from pydantic_ai import AgentRunResult, DeferredToolRequests, RunContext, capture_run_messages
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.exceptions import RunCancelled
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -56,6 +57,7 @@ from ...agent.rows import (
     ErrorRow,
     ReasoningDeltaRow,
     RequestUsageRow,
+    RetriedRow,
     TextDeltaRow,
     ToolCallRow,
     ToolResultRow,
@@ -70,6 +72,7 @@ from ...agent.tools import AgentDeps
 from ...agent.trace import SessionStore
 from ...agent.usage import request_usage, turn_usage_from_run
 from ...db.models import AgentSessionStatus
+from ...llm.retry import retry_sink
 from ..deps import AgentDep, RepoDep, RuntimeDep
 from ..models.agent import AgentCancelResponse
 
@@ -98,15 +101,52 @@ def _history_user_texts(history: Sequence[ModelMessage]) -> list[str]:
     return texts
 
 
-def _new_messages(client: Sequence[Message], history: Sequence[ModelMessage]) -> list[Message]:
+def _consumed_ids(rows: Sequence[TraceRow]) -> set[str] | None:
+    """已入库的用户输入 id; 只要有一条是早于该字段写入的, 就返回 None, 整段退回按文本比对.
+
+    混用两种口径会漏判: 旧行在页面里的 id 由 `seq` 现编, 永远不在已入库集合里, 按 id 切会把整段历史
+    当成新输入重跑.
+    """
+    ids: set[str] = set()
+    for row in rows:
+        if isinstance(row, UserMessageRow):
+            if row.message_id is None:
+                return None
+            ids.add(row.message_id)
+    return ids
+
+
+def _first_unconsumed(client: Sequence[Message], consumed: set[str]) -> int | None:
+    """客户端回放里第一条尚未入库的用户输入的位置; 全都已入库 (或没有用户输入) 时报 None."""
+    for index, message in enumerate(client):
+        if isinstance(message, UserMessage) and _content_text(message.content) and message.id not in consumed:
+            return index
+    return None
+
+
+def _new_messages(
+    client: Sequence[Message], history: Sequence[ModelMessage], consumed: set[str] | None
+) -> list[Message]:
     """客户端本次要送的新内容.
 
     AG-UI 输入契约要求客户端回放整段会话, 而服务端历史 (`SessionStore`) 才是权威, 故按**用户输入**切分:
-    开头若干条用户文本与服务端历史一一对应, 落在它们之后的消息才算本轮新内容.
+    开头若干条已入库的输入与服务端一一对应, 落在第一条未入库输入之前的都算重放.
+
+    切分按消息 id 而不是条数: 取消与失败的回合只在 `events.jsonl` 留用户输入、不进 `messages.json`,
+    两侧的条数本就不相等, 按位置比对会把重放里的旧输入当成新输入再跑一轮 (重复回答与日志膨胀的由来).
+    `consumed` 为 None 时没有 id 可依, 退回按文本顺序比对.
 
     不能逐条比对全部消息: 一个回合里的工具调用在服务端是「一次模型请求一条消息」, 在客户端回放里是
     合并后的一个助手气泡, 两侧分组不同, 逐条比对必然错位并把旧内容重新送给模型.
     """
+    if consumed:
+        index = _first_unconsumed(client, consumed)
+        return [] if index is None else list(client[index:])
+    return _new_messages_by_text(client, history)
+
+
+def _new_messages_by_text(client: Sequence[Message], history: Sequence[ModelMessage]) -> list[Message]:
+    """按用户文本顺序切分重放; 仅用于没有 id 的旧日志."""
     replayed = _history_user_texts(history)
     matched = 0
     for index, message in enumerate(client):
@@ -122,10 +162,12 @@ def _new_messages(client: Sequence[Message], history: Sequence[ModelMessage]) ->
     return []
 
 
-def _new_user_texts(messages: Sequence[Message]) -> list[str]:
-    """本轮客户端新发的用户文本 (重放部分已裁掉)."""
+def _new_user_inputs(messages: Sequence[Message]) -> list[tuple[str, str]]:
+    """本轮客户端新发的用户输入 (重放部分已裁掉), 连同客户端的消息 id."""
     return [
-        text for message in messages if isinstance(message, UserMessage) and (text := _content_text(message.content))
+        (_content_text(message.content), message.id)
+        for message in messages
+        if isinstance(message, UserMessage) and _content_text(message.content)
     ]
 
 
@@ -280,10 +322,10 @@ async def run_agent_agui(
         store = service.store_for(session_id)
         history: list[ModelMessage] = list(store.load_messages() or [])
         adapter = await AGUIAdapter[AgentDeps, str | DeferredToolRequests].from_request(request, agent=agent)
-        incoming = _new_messages(list(adapter.run_input.messages), history)
+        incoming = _new_messages(list(adapter.run_input.messages), history, _consumed_ids(store.ui_events()))
         adapter.run_input.messages = incoming
-        for text in _new_user_texts(incoming):
-            await store.append_row(UserMessageRow(type="user_message", text=text))
+        for text, message_id in _new_user_inputs(incoming):
+            await store.append_row(UserMessageRow(type="user_message", text=text, message_id=message_id))
 
         start_seq = store.last_seq
         rows = _ReplayRows()
@@ -301,37 +343,58 @@ async def run_agent_agui(
             return
             yield
 
+        async def _on_retry(attempt: int, delay_s: float, reason: str) -> None:
+            await store.append_row(
+                RetriedRow(type="retried", attempt=attempt, delay_ms=round(delay_s * 1000), reason=reason)
+            )
+
         async def consume() -> None:
-            try:
-                async for event in adapter.run_stream(
-                    message_history=history,
-                    deps=deps,
-                    capabilities=[_RequestUsageRows(store=store)],
-                    model_settings=resolve_model_settings(
-                        service.config, session_thinking=service.session_thinking(session_id)
-                    ),
-                    usage_limits=UNLIMITED_USAGE,
-                    on_complete=on_complete,
-                ):
-                    if isinstance(event, RunFinishedEvent) and rows.usage is not None:
-                        event.usage = [_token_usage(rows.usage)]
-                    await store.append_row(
-                        AguiEventRow(type="agui", event=event.model_dump(mode="json", by_alias=True, exclude_none=True))
-                    )
-                    for row in rows.feed(event):
-                        await store.append_row(row)
-            except asyncio.CancelledError:
-                await store.append_row(CancelledRow(type="cancelled"))
-                await store.append_row(no_approvals())
-                await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
-                raise
-            except Exception as exc:
-                await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
-                await store.append_row(ErrorRow(type="error", message=str(exc)))
-                await store.append_row(no_approvals())
-                await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
-            finally:
-                store.set_turn_running(False)
+            # 失败与取消都要把已产生的往返落盘: 页面已经把这些展示给用户, 历史缺一截就会让下一轮的
+            # 上下文与所见内容对不上. 捕获到的是异常路径上已有的部分 (用户提示与被打断的响应,
+            # 后者标 state='interrupted'), 框架会在下一轮据此补出中断回执.
+            with capture_run_messages() as captured, retry_sink(_on_retry):
+                try:
+                    async for event in adapter.run_stream(
+                        message_history=history,
+                        deps=deps,
+                        capabilities=[_RequestUsageRows(store=store)],
+                        model_settings=resolve_model_settings(
+                            service.config, session_thinking=service.session_thinking(session_id)
+                        ),
+                        usage_limits=UNLIMITED_USAGE,
+                        on_complete=on_complete,
+                    ):
+                        if isinstance(event, RunErrorEvent) and captured:
+                            # 适配器把模型失败收成 RUN_ERROR 事件而不是抛出, 捕获列表此时已带着
+                            # 这一轮的往返; 先入库, 下一轮才不会少掉用户那句提问
+                            store.save_messages(list(captured))
+                        if isinstance(event, RunFinishedEvent) and rows.usage is not None:
+                            event.usage = [_token_usage(rows.usage)]
+                        await store.append_row(
+                            AguiEventRow(
+                                type="agui",
+                                event=event.model_dump(mode="json", by_alias=True, exclude_none=True),
+                            )
+                        )
+                        for row in rows.feed(event):
+                            await store.append_row(row)
+                except asyncio.CancelledError as exc:
+                    cancelled = RunCancelled.from_cancellation(exc)
+                    if cancelled is not None:
+                        store.save_messages(list(cancelled.all_messages()))
+                    await store.append_row(CancelledRow(type="cancelled"))
+                    await store.append_row(no_approvals())
+                    await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
+                    raise
+                except Exception as exc:
+                    if captured:
+                        store.save_messages(list(captured))
+                    await store.append_row(AguiEventRow(type="agui", event={"type": "RUN_ERROR", "message": str(exc)}))
+                    await store.append_row(ErrorRow(type="error", message=str(exc)))
+                    await store.append_row(no_approvals())
+                    await runtime.repo.update_agent_session(session_id, status=AgentSessionStatus.ACTIVE)
+                finally:
+                    store.set_turn_running(False)
 
         store.set_turn_running(True)
         task = asyncio.create_task(consume(), name=f"agui-turn-{session_id}")

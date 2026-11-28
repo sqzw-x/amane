@@ -30,6 +30,8 @@
   "toolCallsCount": "{{n}} tools called",
   "thinkingRunning": "Thinking…",
   "toolRunning": "Running tool…",
+  "retryNotice": "Retry #{{n}} in {{seconds}}s",
+  "retryCount": "{{n}} retries",
   "toolArgs": "Arguments",
   "toolResult": "Result",
   "savedQueryChip": "Saved query #{{id}}",

@@ -73,6 +73,16 @@ def _tool_returns(messages: Sequence[ModelMessage]) -> list[ToolReturnPart]:
     return [p for m in messages if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, ToolReturnPart)]
 
 
+def _text_parts(messages: Sequence[ModelMessage]) -> list[str]:
+    return [
+        p.content
+        for m in messages
+        if isinstance(m, ModelResponse)
+        for p in m.parts
+        if isinstance(p, TextPart) and isinstance(p.content, str)
+    ]
+
+
 def _user_prompts(messages: Sequence[ModelMessage]) -> list[str]:
     return [
         p.content
@@ -403,6 +413,106 @@ async def test_cancelled_turn_clears_pending_approvals(app: FastAPI, client: Asy
     assert [row.interrupts for row in rows if isinstance(row, ApprovalsRow)] == [[]]
 
 
+@pytest.mark.parametrize(
+    ("message_ids", "expected"),
+    [
+        ([None], None),
+        (["a", None, "b"], None),
+        (["a", "b"], {"a", "b"}),
+    ],
+    ids=["全部旧行", "新旧混杂", "全部带 id"],
+)
+def test_consumed_ids_falls_back_on_legacy_rows(message_ids: list[str | None], expected: set[str] | None) -> None:
+    """有一条旧行就整段退回文本比对: 旧行在页面上没有稳定 id, 按 id 切会把整段历史当成新输入."""
+    rows = [
+        UserMessageRow(type="user_message", text=f"问题{index}", message_id=message_id)
+        for index, message_id in enumerate(message_ids)
+    ]
+    assert agent_agui._consumed_ids(rows) == expected
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_keeps_history_for_next_turn(app: FastAPI, client: AsyncClient) -> None:
+    """取消的回合要留在模型历史里, 且重放不得把它的用户输入再送一遍.
+
+    页面已经把被取消的那段展示给用户了, 历史里缺了它就前后对不上; 而重放里又带着它, 按位置比对
+    会把它当成新输入重跑一轮. 两者的正解是: 历史留着它, 重放按 id 认出它.
+    """
+    release = asyncio.Event()
+    seen: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        seen.append(list(messages))
+        if len(seen) == 1:
+            yield "上半"
+            await release.wait()
+            return
+        yield "第二轮回答"
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="cancelled-replay")
+    assert session.id is not None
+    _install_agent(service, stream)
+
+    run_task = asyncio.create_task(_run(client, session.id, [_user("被取消的问题", "u1")]))
+    for _ in range(200):
+        if service.is_turn_running(session.id):
+            break
+        await asyncio.sleep(0.01)
+    assert service.is_turn_running(session.id), "回合未起来"
+
+    resp = await client.post(f"/agent/sessions/{session.id}/agui/cancel")
+    assert resp.json() == {"cancelled": True}
+    release.set()
+    await asyncio.wait_for(run_task, timeout=5)
+
+    # 取消时已产出的往返要落盘: 只剩回放行的话, 下一轮的模型上下文会凭空少掉前文
+    history = service.store_for(session.id).load_messages() or []
+    assert _user_prompts(history) == ["被取消的问题"]
+
+    await _run(client, session.id, [_user("被取消的问题", "u1"), _user("新问题", "u2")])
+
+    # 顺序是 历史 → 被取消回合的部分回答 → 本轮新输入: 被取消的那条不重复送, 但它的产出仍在上文里
+    assert _user_prompts(seen[-1]) == ["被取消的问题", "新问题"]
+    assert _text_parts(seen[-1]).count("上半") == 1
+    second = seen[-1]
+    assert [isinstance(message, ModelRequest) for message in second] == [True, False, True]
+    rows = service.store_for(session.id).read_events()
+    assert [row.text for row in rows if isinstance(row, UserMessageRow)] == ["被取消的问题", "新问题"]
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_keeps_user_input_for_next_turn(app: FastAPI, client: AsyncClient) -> None:
+    """模型调用失败时, 这一轮已产生的往返同样入库; 下一轮重放它不得当成新输入再送一遍.
+
+    失败分支原先只写错误行, 用户那句话在页面上还在、在 `messages.json` 里却没有, 下一轮模型的
+    上下文因此凭空少掉前文; 而重放里又带着它, 逐条比对还会把它认成新输入.
+    """
+    seen: list[list[ModelMessage]] = []
+    fail = {"on": True}
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[StreamItem]:
+        seen.append(list(messages))
+        if fail["on"]:
+            raise RuntimeError("Request timed out.")
+        yield "好了"
+
+    service = await service_of(app, client)
+    session = await service.create_session(title="failed-history")
+    assert session.id is not None
+    _install_agent(service, stream)
+
+    await _run(client, session.id, [_user("先问一句", "u1")])
+    assert _user_prompts(service.store_for(session.id).load_messages() or []) == ["先问一句"]
+
+    fail["on"] = False
+    await _run(client, session.id, [_user("先问一句", "u1"), _user("再问一句", "u2")])
+
+    assert _user_prompts(seen[-1]) == ["先问一句", "再问一句"]
+    rows = service.store_for(session.id).read_events()
+    assert [row.text for row in rows if isinstance(row, UserMessageRow)] == ["先问一句", "再问一句"]
+
+
 @pytest.mark.asyncio
 async def test_disconnect_does_not_cancel_turn(app: FastAPI, client: AsyncClient) -> None:
     """客户端中途断开只结束订阅, 回合继续运行并落盘."""
@@ -459,7 +569,7 @@ async def test_replayed_transcript_reaches_model_once(app: FastAPI, client: Asyn
         [
             _user("第一轮"),
             {"id": "a1", "role": "assistant", "content": "第1答"},
-            _user("第二轮"),
+            _user("第二轮", "u2"),
         ],
     )
 
@@ -817,22 +927,36 @@ def _history(*texts: str) -> list[ModelMessage]:
 
 
 @pytest.mark.parametrize(
-    ("replayed", "history_texts", "expected"),
+    ("replayed", "consumed", "history_texts", "expected"),
     [
-        ([], [], []),
-        ([("assistant", "答")], ["旧问"], []),
-        ([("user", "旧问")], ["旧问"], []),
-        ([("user", "旧问"), ("assistant", "旧答"), ("user", "新问")], ["旧问"], ["新问"]),
-        ([("user", "改过的旧问")], ["旧问"], ["改过的旧问"]),
+        ([], None, [], []),
+        ([("assistant", "答")], None, ["旧问"], []),
+        ([("user", "旧问")], None, ["旧问"], []),
+        ([("user", "旧问"), ("assistant", "旧答"), ("user", "新问")], None, ["旧问"], ["新问"]),
+        ([("user", "改过的旧问")], None, ["旧问"], ["改过的旧问"]),
+        # 没有已入库 id 可依 (旧日志) 时才退回文本比对: 此时文本对不上即为新输入
+        ([("user", "旧问")], None, [], ["旧问"]),
+        # id 全部命中即全部算重放, 与服务端历史的条数无关 — 取消 / 失败的回合本就不进历史
+        ([("user", "甲"), ("user", "乙")], {"m0"}, ["甲"], ["乙"]),
+        ([("user", "甲"), ("user", "乙")], {"m0", "m1"}, [], []),
     ],
-    ids=["空客户端", "只有助手消息", "完全重放", "追加新输入", "重放被编辑"],
+    ids=[
+        "空客户端",
+        "只有助手消息",
+        "完全重放",
+        "追加新输入",
+        "重放被编辑",
+        "旧日志无 id 按文本",
+        "已入库的在前",
+        "全部已入库",
+    ],
 )
 def test_new_messages_keeps_only_unseen_user_input(
-    replayed: list[tuple[str, str]], history_texts: list[str], expected: list[str]
+    replayed: list[tuple[str, str]], consumed: set[str] | None, history_texts: list[str], expected: list[str]
 ) -> None:
-    """按用户输入切分: 与服务端历史逐条相等的开头被裁掉, 之后的内容整段算本轮新输入."""
-    incoming = agent_agui._new_messages(_agui_messages(*replayed), _history(*history_texts))
-    assert agent_agui._new_user_texts(incoming) == expected
+    """没有 id 可依时按用户输入切分: 与服务端历史逐条相等的开头被裁掉, 之后的内容整段算本轮新输入."""
+    incoming = agent_agui._new_messages(_agui_messages(*replayed), _history(*history_texts), consumed)
+    assert [text for text, _ in agent_agui._new_user_inputs(incoming)] == expected
 
 
 @pytest.mark.asyncio

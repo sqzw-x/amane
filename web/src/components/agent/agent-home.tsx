@@ -44,6 +44,7 @@ import {
   IconList,
   IconPencil,
   IconPlus,
+  IconRefresh,
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
@@ -83,6 +84,7 @@ import {
   foldTrace,
   type AgentMessage,
   type AgentPart,
+  type AgentRetryPart,
   type AgentToolCallPart,
   type TraceRow,
 } from "@/lib/agent/trace";
@@ -213,6 +215,8 @@ function Part({ part, streaming }: { part: AgentPart; streaming: boolean }) {
       return <ReasoningPart text={part.text} />;
     case "tool-call":
       return <ToolCallPart part={part} running={streaming && part.result === undefined} />;
+    case "data-retry":
+      return <RetryPart part={part} />;
     case "data-request-usage":
       return <RequestUsageBar usage={part.data} />;
     case "data-turn-usage":
@@ -220,10 +224,37 @@ function Part({ part, streaming }: { part: AgentPart; streaming: boolean }) {
   }
 }
 
-/** 展示分段: `plain` 逐部件直出 (正文与紧随其后的用量条), `activity` 收进活动块 (思考与工具调用). */
+/** 重试: 与思考段同形的条形块, 收起时标题只留第几次与等待时长.
+
+    原始错误只在展开后出现: 中转站的报错文案对用户没有用处, 而网络抖动时重试会接连刷出很多条.
+*/
+function RetryPart({ part }: { part: AgentRetryPart }) {
+  const { t } = useTranslation("agent");
+  const { attempt, delayMs, reason } = part.data;
+  return (
+    <FoldBar
+      header={() => (
+        <>
+          <Box c="dimmed" style={{ display: "flex", lineHeight: 0 }}>
+            <IconRefresh size={14} stroke={1.6} />
+          </Box>
+          <BarText>
+            {t("retryNotice", { n: attempt, seconds: (delayMs / 1000).toFixed(1) })}
+          </BarText>
+        </>
+      )}
+    >
+      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+        {reason}
+      </Text>
+    </FoldBar>
+  );
+}
+
+/** 展示分段: `plain` 逐部件直出 (正文与紧随其后的用量条), `activity` 收进活动块 (思考、工具调用与重试). */
 type PartChunk = { kind: "plain"; indices: number[] } | { kind: "activity"; indices: number[] };
 
-/** 按部件类型分段: 思考与工具调用聚成一段活动, 其余直出.
+/** 按部件类型分段: 思考、工具调用与重试聚成一段活动, 其余直出.
 
     正文因此不与活动同块: 夹在工具与思考之间的回复照常显示, 不随活动一起折叠, 活动也就被正文切成若干块.
     逐请求用量紧跟在这次响应的产出之后, 随前一段走而不另起一段, 也不把活动切开; 回合总计是整轮的页脚,
@@ -232,8 +263,10 @@ type PartChunk = { kind: "plain"; indices: number[] } | { kind: "activity"; indi
 function partChunks(parts: readonly AgentPart[]): PartChunk[] {
   const chunks: PartChunk[] = [];
   for (const [index, part] of parts.entries()) {
+    // 逐请求用量是「这次响应」的附属: 随前一段走, 不另起一段, 也不把活动切开
     const trailing = part.type === "data-request-usage";
-    const activity = part.type === "reasoning" || part.type === "tool-call";
+    const activity =
+      part.type === "reasoning" || part.type === "tool-call" || part.type === "data-retry";
     const open = chunks.at(-1);
     if (open !== undefined && (trailing || activity === (open.kind === "activity"))) {
       open.indices.push(index);
@@ -265,7 +298,7 @@ function activityElapsed(members: readonly AgentPart[]): string | null {
   return elapsed < 1000 ? "<1s" : formatDuration(startedAt, endedAt);
 }
 
-/** 活动块: 一段连续的思考与工具调用, 总是收起; 块内的思考段与工具调用各自成条, 可单独展开.
+/** 活动块: 一段连续的思考、工具调用与重试, 总是收起; 块内的各类内容各自成条, 可单独展开.
 
     正文不在其中 (见 partChunks). 标题给出块内计数, 产出中补当前状态, 收束后补块内耗时.
 */
@@ -283,6 +316,7 @@ function ActivityBlock({
   const members = indices.map((index) => parts[index]);
   const calls = members.flatMap((member) => (member.type === "tool-call" ? [member] : []));
   const thoughts = members.filter((member) => member.type === "reasoning").length;
+  const retries = members.filter((member) => member.type === "data-retry").length;
   /** 这块就是消息的末段: 回合还在跑时, 它是要么在等工具回执, 要么在等模型产出下一步的那一块. */
   const active = streaming && indices.at(-1) === parts.length - 1;
   const calling = active && calls.some((call) => call.result === undefined);
@@ -293,6 +327,7 @@ function ActivityBlock({
   const label = [
     thoughts === 0 ? null : t("thoughtCount", { n: thoughts }),
     calls.length === 0 ? null : t("toolCallsCount", { n: calls.length }),
+    retries === 0 ? null : t("retryCount", { n: retries }),
   ]
     .filter((item): item is string => item !== null)
     .join(" · ");

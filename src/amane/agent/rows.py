@@ -37,6 +37,11 @@ class UserMessageRow(RowBase):
 
     type: Literal["user_message"]
     text: str
+    message_id: str | None = None
+    """客户端给的 AG-UI 消息 id; 页面回放时沿用它, 服务端据此认出重放里的同一条输入.
+
+    缺省是早于此字段写入的行, 那时只能按文本与位置比对.
+    """
 
 
 class ReasoningDeltaRow(RowBase):
@@ -104,6 +109,21 @@ class ApprovalsRow(RowBase):
     interrupts: list[Interrupt]
 
 
+class RetriedRow(RowBase):
+    """一次失败请求的重试记录; 成功的那次不留行.
+
+    重试可能持续很久, 既不加行也不报错时页面只有转圈, 分不清是卡住还是在等.
+    """
+
+    type: Literal["retried"]
+    attempt: int
+    """第几次重试 (从 1 起). """
+    delay_ms: int
+    """本次退避等待的时长."""
+    reason: str
+    """触发重试的错误文案."""
+
+
 class ErrorRow(RowBase):
     """回合异常; 文案直接进助手气泡."""
 
@@ -143,6 +163,7 @@ UiRow = Annotated[
     | RequestUsageRow
     | TurnUsageRow
     | ApprovalsRow
+    | RetriedRow
     | ErrorRow
     | CancelledRow,
     Field(discriminator="type"),

@@ -30,6 +30,8 @@
   "toolCallsCount": "调用了 {{n}} 个工具",
   "thinkingRunning": "思考中…",
   "toolRunning": "工具运行中…",
+  "retryNotice": "第 {{n}} 次重试, 等待 {{seconds}} 秒",
+  "retryCount": "重试 {{n}} 次",
   "toolArgs": "参数",
   "toolResult": "结果",
   "savedQueryChip": "查询预设 #{{id}}",
