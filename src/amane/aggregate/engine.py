@@ -54,9 +54,9 @@ RAW_TO_DB_FIELD: dict[str, str] = {
 
 SCALAR_FIELD_NAMES: frozenset[str] = frozenset(SCALAR_FIELDS)
 
-# 受治理规则约束的六个分类字段; 顺序即候选名的收集顺序.
+# 受治理规则约束的分类字段; 顺序即候选名的收集顺序.
+# 演员不在其中: 规则登记实体展示名而源站只给原始名, 解析要查别名表, 取值期不做折叠.
 RULE_FIELD_KINDS: dict[MetadataField, FacetKind] = {
-    MetadataField.ACTORS: FacetKind.ACTOR,
     MetadataField.DIRECTORS: FacetKind.DIRECTOR,
     MetadataField.TAGS: FacetKind.TAG,
     MetadataField.SERIES: FacetKind.SERIES,
@@ -342,9 +342,7 @@ def pending_rule_names(
             data = fetched.get(node.cache_key)
             if data is None:
                 continue
-            if field == MetadataField.ACTORS:
-                found.update(item.name for item in data.actors if item.name)
-            elif field == MetadataField.DIRECTORS:
+            if field == MetadataField.DIRECTORS:
                 found.update(data.directors)
             elif field == MetadataField.TAGS:
                 found.update(data.tags)
@@ -543,10 +541,8 @@ def _fill_resolved(
     resolved: ResolvedField,
     source_key: SourceKey,
 ) -> None:
-    """写入已按规则收敛的取值; 演员条目整体复制, 后续填空不改站点结果."""
-    if resolved.actors is not None:
-        result.actors = [item.model_copy() for item in resolved.actors]
-    elif resolved.names is not None:
+    """写入已按规则收敛的取值."""
+    if resolved.names is not None:
         if field == MetadataField.DIRECTORS:
             result.directors = list(resolved.names)
         elif field == MetadataField.TAGS:

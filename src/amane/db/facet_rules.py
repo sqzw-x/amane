@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from ..crawlers.models import FilmActor, MediaMetadata
+from ..crawlers.models import MediaMetadata
 from ..enums import MetadataField
-from ..parsing import split_actor_aliases
 from .models import SCRAPE_FACET_KINDS, FacetKind, FacetRuleAction, Metadata
 
 
@@ -157,16 +156,15 @@ def apply_metadata_facet_fields(meta: Metadata, rules_by_kind: RulesByKind) -> N
 
 @dataclass(frozen=True, slots=True)
 class ResolvedField:
-    """一次来源结果按规则收敛后的取值; 三类互斥, 只有对应字段用得上的一项."""
+    """一次来源结果按规则收敛后的取值; 标量与名单互斥, 只有对应字段用得上的一项."""
 
     value: str | None = None
-    actors: list[FilmActor] | None = None
     names: list[str] | None = None
 
     @property
     def empty(self) -> bool:
         """没有可写入的值; 调用方据此继续沿字段链回退."""
-        return not (self.value or self.actors or self.names)
+        return not (self.value or self.names)
 
 
 def resolve_field_value(field: MetadataField, data: MediaMetadata, rules_by_kind: RulesByKind) -> ResolvedField:
@@ -192,27 +190,6 @@ def resolve_field_value(field: MetadataField, data: MediaMetadata, rules_by_kind
 
 def empty_rules_by_kind() -> dict[FacetKind, dict[str, RuleEntry]]:
     return {kind: {} for kind in SCRAPE_FACET_KINDS}
-
-
-def rule_lookup_names(values: FacetFieldValues) -> dict[FacetKind, set[str]]:
-    """六个真值字段在规则表里可能命中的名字, 按 kind 分组.
-
-    演员同时给出原始名与 ``name(alias1, alias2)`` 拆出的展示名. 落库期的别名表解析不在这一层.
-    """
-    names: dict[FacetKind, set[str]] = {kind: set() for kind in SCRAPE_FACET_KINDS}
-    names[FacetKind.ACTOR] = {
-        candidate for raw in values.actors if raw for candidate in (raw, split_actor_aliases(raw)[0])
-    }
-    names[FacetKind.DIRECTOR].update(values.directors)
-    names[FacetKind.TAG].update(values.tags)
-    for kind, value in (
-        (FacetKind.STUDIO, values.studio),
-        (FacetKind.PUBLISHER, values.publisher),
-        (FacetKind.SERIES, values.series),
-    ):
-        if value:
-            names[kind].add(value)
-    return {kind: found for kind, found in names.items() if found}
 
 
 type RuleRow = tuple[FacetKind, str, FacetRuleAction, str | None, FacetRuleAction | None]

@@ -6,7 +6,6 @@ import pytest
 
 from amane.crawlers.models import MediaMetadata
 from amane.db.facet_rules import (
-    FacetFieldValues,
     ResolvedField,
     RuleEntry,
     RuleRow,
@@ -14,7 +13,6 @@ from amane.db.facet_rules import (
     apply_scalar,
     resolve_field_value,
     resolve_name,
-    rule_lookup_names,
     rules_from_rows,
 )
 from amane.db.models import FacetKind, FacetRuleAction
@@ -86,35 +84,6 @@ def test_apply_list(names: list[str], rules: dict[str, RuleEntry], expected: lis
 )
 def test_apply_scalar(value: str | None, rules: dict[str, RuleEntry], expected: str | None) -> None:
     assert apply_scalar(value, rules) == expected
-
-
-class TestRuleLookupNames:
-    """候选名收集: 演员带别名拆分名, 标量只取非空值."""
-
-    @pytest.mark.parametrize(
-        ("desc", "values", "expected"),
-        [
-            (
-                "演员同时给出原始名与展示名",
-                FacetFieldValues(actors=["Mei(みい)"], directors=[], tags=[]),
-                {FacetKind.ACTOR: {"Mei(みい)", "Mei"}},
-            ),
-            (
-                "列表去重后按种类分组",
-                FacetFieldValues(actors=[], directors=["D1"], tags=["T1", "T1"]),
-                {FacetKind.DIRECTOR: {"D1"}, FacetKind.TAG: {"T1"}},
-            ),
-            (
-                "标量只收非空值",
-                FacetFieldValues(actors=[], directors=[], tags=[], studio="S", series=""),
-                {FacetKind.STUDIO: {"S"}},
-            ),
-            ("全空 → 无可查名字", FacetFieldValues(actors=[], directors=[], tags=[]), {}),
-        ],
-        ids=["actor_alias_split", "grouped_dedupe", "scalar_skips_empty", "all_empty"],
-    )
-    def test_names(self, desc: str, values: FacetFieldValues, expected: dict[FacetKind, set[str]]) -> None:
-        assert rule_lookup_names(values) == expected, desc
 
 
 class TestRulesFromRows:
@@ -203,11 +172,10 @@ class TestResolveFieldValue:
         [
             ("空标量", ResolvedField(value=None), True),
             ("空名单", ResolvedField(names=[]), True),
-            ("空出演者", ResolvedField(actors=[]), True),
             ("有标量", ResolvedField(value="X"), False),
             ("有名单", ResolvedField(names=["X"]), False),
         ],
-        ids=["empty_scalar", "empty_names", "empty_actors", "filled_scalar", "filled_names"],
+        ids=["empty_scalar", "empty_names", "filled_scalar", "filled_names"],
     )
     def test_empty_flag(self, desc: str, resolved: ResolvedField, expected: bool) -> None:
         assert resolved.empty is expected, desc
