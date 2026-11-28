@@ -13,6 +13,7 @@ import re
 import time
 import zlib
 from dataclasses import dataclass
+from html import unescape as html_unescape
 from typing import TYPE_CHECKING
 
 from parsel import Selector
@@ -42,6 +43,12 @@ _POSTER_PREFIX = "pf_e_"
 _AMATEUR_TAG = "素人"
 #: 番号尾部的数字段, 供站点多写了一段前导数字时反查.
 _TAIL_DIGITS = re.compile(r"(\d+)\s*$")
+#: 详情页只引用播放器页, pid 在其路径末段; 真正的 mp4 地址要再用 pid 换一次.
+_SAMPLE_PID = re.compile(r"/sampleplayer/sampleplayer\.html/([^/?#\"']+)")
+_SAMPLE_RESPONSE = "https://www.mgstage.com/sampleplayer/sampleRespons.php?pid={pid}"
+#: 站点播放器脚本把 ``.ism/request?...`` 改写成 ``.mp4``; 服务端拿到的是播放列表形态.
+_ISM_REQUEST = re.compile(r"\.ism/request.*$")
+
 #: 详情页地址里的番号段, 检索结果与直达地址共用同一形态.
 _DETAIL_PATH = re.compile(r"/product/product_detail/([^/]+)/")
 #: 商品目录的三份分片, 合计十余万条.
@@ -129,6 +136,13 @@ def _poster_url(cover_url: str) -> str | None:
     if not directory or not filename.startswith(_COVER_PREFIX):
         return None
     return f"{directory}/{_POSTER_PREFIX}{filename.removeprefix(_COVER_PREFIX)}"
+
+
+def _sample_mp4(url: str) -> str:
+    """播放器声明的样品地址 → 可直接下载的 mp4; 站点在 JSON 里把 ``&`` 转义成 ``&amp;``."""
+    resolved = _ISM_REQUEST.sub(".mp4", html_unescape(url))
+    # 早期条目在 ``dl`` 子域, 播放器脚本同样换成 ``chdl``.
+    return resolved.replace("http://dl", "http://chdl")
 
 
 class MGStageCrawler(Crawler):
@@ -292,6 +306,9 @@ class MGStageCrawler(Crawler):
 
         extrafanart = extract_all_texts(html, '//dl[@id="sample-photo"]//li/a/@href')
 
+        # 样品片需要再换一次地址; 取不到时为空, 不阻断其余字段.
+        trailer_urls = await self._trailer_urls(html)
+
         # 商品紹介的正文有两种标记 (直接在 p.txt.introduction 内, 或嵌在其中的 <p> 被解析器拍平为兄弟节点),
         # 两者都收, 只排除「すべてを見る」.
         plot = "\n".join(
@@ -311,10 +328,33 @@ class MGStageCrawler(Crawler):
             plot=plot or None,
             poster_urls=[poster_url] if poster_url else [],
             thumb_urls=[thumb_url] if thumb_url else [],
+            trailer_urls=trailer_urls,
             extrafanart=extrafanart,
             source_url=url,
             external_id=url,
         )
+
+    async def _trailer_urls(self, html: Selector) -> list[str]:
+        """预告片.
+
+        详情页只给出播放器页地址, 真正的 mp4 要拿 pid 换 ``sampleRespons.php``; 站点播放器脚本
+        再把 ``.ism/request?...`` 改写成 ``.mp4``, 这层改写必须在服务端完成, 否则拿到的是播放列表.
+        早期条目没有样品, 不按命名规则构造地址.
+        """
+        href = extract_text(html, '//p[contains(@class, "sample_movie_btn")]/a/@href')
+        found = _SAMPLE_PID.search(href or "")
+        if found is None:
+            return []
+        try:
+            payload = await self.client.get_json(_SAMPLE_RESPONSE.format(pid=found[1]), cookies=self.cookies)
+        except RequestError:
+            # 样品是附加资源: 取不到按没有处理, 不让整条刮削失败.
+            self.logger.debug("sample player unavailable", pid=found[1])
+            return []
+        if not isinstance(payload, dict):
+            return []
+        url = payload.get("url")
+        return [_sample_mp4(url)] if isinstance(url, str) and url else []
 
     @staticmethod
     def _parse_runtime(text: str) -> int | None:

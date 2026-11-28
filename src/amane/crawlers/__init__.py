@@ -15,18 +15,22 @@ from .http import HttpClient
 from .models import FetchOptions, FilmActor, MediaMetadata, film_actors
 from .registry import registry
 from .sites import (
+    AiOfficialCrawler,
     AiravCrawler,
     AvbaseCrawler,
     AvsoxCrawler,
     C0930Crawler,
     CaribbeanComCrawler,
     DahliaCrawler,
+    Data18Crawler,
     DmmCrawler,
     FalenoCrawler,
     FC2ClubCrawler,
     FC2Crawler,
     FC2PPVDBCrawler,
     FreejavbtCrawler,
+    GammaCrawler,
+    GenericOfficialCrawler,
     GetchuCrawler,
     GigaCrawler,
     H0930Crawler,
@@ -68,17 +72,21 @@ registry.register(MuramuraCrawler)
 registry.register(AvbaseCrawler)
 registry.register(XCityCrawler)
 registry.register(DahliaCrawler)
+registry.register(Data18Crawler)
 registry.register(FalenoCrawler)
 registry.register(GigaCrawler)
 registry.register(Kin8Crawler)
 registry.register(FC2ClubCrawler)
 registry.register(FC2PPVDBCrawler)
+registry.register(GammaCrawler)
 registry.register(GetchuCrawler)
+registry.register(GenericOfficialCrawler)
 registry.register(IqqtvCrawler)
 registry.register(PrestigeCrawler)
 registry.register(R18DevCrawler)
 registry.register(ThePornDBCrawler)
 registry.register(OfficialCrawler)
+registry.register(AiOfficialCrawler)
 registry.register(H4610Crawler)
 registry.register(HeyzoCrawler)
 registry.register(C0930Crawler)
@@ -89,6 +97,7 @@ registry.register(H0930Crawler)
 __all__ = [
     "ActorCrawler",
     "ActorMetadata",
+    "AiOfficialCrawler",
     "AiravCrawler",
     "AvbaseActorCrawler",
     "AvbaseCrawler",
@@ -97,6 +106,7 @@ __all__ = [
     "CaribbeanComCrawler",
     "Crawler",
     "DahliaCrawler",
+    "Data18Crawler",
     "DmmCrawler",
     "FC2ClubCrawler",
     "FC2Crawler",
@@ -106,6 +116,8 @@ __all__ = [
     "FilmActor",
     "FreejavbtCrawler",
     "GFriendsActorCrawler",
+    "GammaCrawler",
+    "GenericOfficialCrawler",
     "GetchuCrawler",
     "GigaCrawler",
     "H0930Crawler",

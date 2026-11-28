@@ -32,6 +32,7 @@ from ..enums import (
     Language,
     MetadataField,
     SiteName,
+    TrailerMode,
     WatermarkCorner,
     WatermarkKind,
 )
@@ -71,7 +72,10 @@ def _languages_schema(schema: dict[str, Any]) -> None:
 
 #: 各内容类型默认有序路由 (资格真值 + 该类型默认字段优先级).
 _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
+    # mgstage 排在 dmm 之前: プレステージ 的独占特典只在该站有, 同片在 dmm 上是通常版
+    # (标题缺少特典标记, 时长短 15-30 分钟). 非该厂牌的片在 mgstage 未收录, 自然落到 dmm.
     ContentType.CENSORED: [
+        SiteName.MGSTAGE,
         SiteName.DMM,
         SiteName.JAVDB,
         SiteName.JAVBUS,
@@ -111,10 +115,12 @@ _DEFAULT_CONTENT_ROUTES: dict[ContentType, list[SiteName]] = {
         SiteName.JAVDB,
         SiteName.JAVBUS,
     ],
+    # 欧美片不进 JAV 系索引站: 实测这些来源对欧美片连搜索都不命中, 只会白占一次请求.
     ContentType.WESTERN: [
         SiteName.THEPORNDB,
-        SiteName.JAVDB,
-        SiteName.FREEJAVBT,
+        SiteName.GAMMA,
+        SiteName.DATA18,
+        SiteName.OFFICIAL_GENERIC,
     ],
     ContentType.HENTAI: [
         SiteName.GETCHU,
@@ -334,6 +340,10 @@ class SiteConfig(BaseModel):
         return None if v is None else _require_browser_engine(v, strict=False)
 
     api_token: str | None = Field(default=None, json_schema_extra={"x-visible-keys": _SITES_WITH_API_TOKEN})
+    model: str | None = Field(default=None, json_schema_extra={"x-visible-keys": [SiteName.OFFICIAL_AI]})
+    """该来源调用的模型名; 目前只有 official_ai 用."""
+    trailer_mode: TrailerMode = Field(default=TrailerMode.ALL, json_schema_extra={"x-visible-keys": [SiteName.DATA18]})
+    """data18 的预告片抓取范围: 只取完整预告片 / 只取预览片 / 两者都取."""
     official_routes: dict[str, Manufacturer] = Field(
         default_factory=dict, json_schema_extra={"x-visible-keys": [SiteName.OFFICIAL]}
     )
@@ -373,6 +383,9 @@ class ScrapingConfig(BaseModel):
     )
     crop_poster: bool = True
     """仅有码与无码从封面自动裁切生成海报."""
+
+    multi_trailer: bool = False
+    """多预告片: 启用后所有候选都落盘到 ``trailers/`` 子目录, 而不是只留一个 ``trailer.mp4``."""
 
     poster_ratio: float = Field(default=0.7, ge=0.3, le=1.0)
     """海报裁剪宽高比 (w/h). 从封面右侧裁剪生成海报. 默认 0.7 (贴近常见 379x538 / 高清海报)."""
@@ -422,7 +435,11 @@ class ScrapingConfig(BaseModel):
     )
 
     site_config: dict[str, SiteConfig] = Field(
-        default_factory=lambda: {str(site): SiteConfig() for site in SiteName},
+        # data18 的年龄门不会被识别成 Cloudflare 挑战, 直连只会拿到确认页, 因此默认走渲染.
+        default_factory=lambda: {
+            str(site): SiteConfig(use_browser=BrowserMode.ALWAYS if site is SiteName.DATA18 else BrowserMode.AUTO)
+            for site in SiteName
+        },
         json_schema_extra={"x-frozen-keys": True},
     )
     """含影片站与演员站."""

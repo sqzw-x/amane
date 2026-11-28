@@ -187,6 +187,20 @@ CASES: list[object] = [
     _Case("/media/这里番号/MIDV-123.mp4", number="MIDV-123", content_type=ContentType.CENSORED),
     # 路径关键词优先于番号分类
     _Case("/media/欧美/HEYZO-123.mp4", number="HEYZO-123", content_type=ContentType.WESTERN),
+    # --- 订阅平台命名: 平台标记之后是作品名, 没有可对齐的番号 ---
+    _Case(
+        "/media/[ManyVids] Purple Bitch - Glory Hole For Anime Girlfriend (21-09-2021) 1080p.mp4",
+        number="Purple Bitch - Glory Hole For Anime Girlfriend",
+        content_type=ContentType.WESTERN,
+        definition="1080p",
+    ),
+    _Case(
+        "/media/of.2024.dreddxxx.melody.maks.xmas.mp4",
+        number="dreddxxx.melody.maks.xmas",
+        content_type=ContentType.WESTERN,
+    ),
+    # 平台标记必须是独立的方括号段, 普通方括号字幕组标记不参与
+    _Case("/media/[SubGroup] MIDV-123.mp4", number="MIDV-123", content_type=ContentType.CENSORED),
     _Case("/media/里番/MIDV-123.mp4", number="MIDV-123", content_type=ContentType.HENTAI),
     # 无路径关键词: 按番号
     _Case("/media/MIDV-123.mp4", number="MIDV-123", content_type=ContentType.CENSORED),

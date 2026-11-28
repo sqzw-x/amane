@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from abc import ABC, abstractmethod
@@ -34,6 +35,8 @@ BrowserPageResult = tuple[str | None, RequestFailure | None]
 # 挑战页轮询间隔与浏览器空闲关闭时限 (秒).
 _CHALLENGE_POLL_S = 1.0
 _IDLE_TIMEOUT_S = 600.0
+# 交互 (点击/滚动) 之后等待新请求静默的上限 (毫秒): 懒加载与 XHR 需要时间落地.
+_INTERACTION_IDLE_MS = 3000.0
 # 同一后端的并发页数上限. 限速由 RateLimiters 承担, 这里只约束浏览器资源.
 _MAX_CONCURRENCY = 2
 # solver 的 HTTP 调用在服务端等待挑战之外留出的余量 (秒), 以及会话建立 / 销毁的调用时限.
@@ -54,6 +57,9 @@ class BrowserBackend(Protocol):
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult: ...
 
     async def close(self) -> None: ...
@@ -75,6 +81,9 @@ class BrowserClient(Protocol):
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult: ...
 
 
@@ -125,6 +134,9 @@ class BrowserPool:
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult:
         name = self.resolve(backend)
         if name is None:
@@ -143,6 +155,9 @@ class BrowserPool:
             wait_for=wait_for,
             timeout=timeout if timeout is not None else self._timeout_ms,
             network_idle_timeout=network_idle_timeout,
+            click=click,
+            click_all=click_all,
+            scroll=scroll,
         )
 
     def _create(self, name: BrowserBackendName) -> BrowserBackend:
@@ -222,6 +237,10 @@ class _PageLike(Protocol):
 
     async def wait_for_selector(self, selector: str, *, timeout: float) -> object: ...
 
+    async def click(self, selector: str, *, timeout: float) -> object: ...
+
+    async def evaluate(self, expression: str) -> object: ...
+
     async def close(self) -> None: ...
 
 
@@ -276,6 +295,9 @@ class _LocalBackend(ABC):
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult:
         effective = timeout if timeout is not None else self._default_timeout
         self._active += 1
@@ -290,6 +312,9 @@ class _LocalBackend(ABC):
                     wait_for=wait_for,
                     timeout=effective,
                     network_idle_timeout=network_idle_timeout,
+                    click=click,
+                    click_all=click_all,
+                    scroll=scroll,
                 )
         finally:
             self._active -= 1
@@ -304,6 +329,9 @@ class _LocalBackend(ABC):
         wait_for: str | None,
         timeout: float,
         network_idle_timeout: float | None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult:
         page: _PageLike | None = None
         try:
@@ -326,6 +354,40 @@ class _LocalBackend(ABC):
                 remaining = max(1.0, (deadline - time.monotonic()) * 1000)
                 await page.wait_for_selector(wait_for, timeout=remaining)
                 content = await page.content()
+            # 交互: 有些站点的正文与资源只有在点击/滚动之后才由前端生成. 失败不判死整次渲染,
+            # 调用方按当前正文自行判断 (取不到就回退).
+            if click is not None:
+                try:
+                    await page.click(click, timeout=max(1.0, (deadline - time.monotonic()) * 1000))
+                except Exception as exc:
+                    logger.debug("browser click failed (ignored)", selector=click, error=str(exc))
+            if click_all is not None:
+                # 一次点击所有匹配项: 多组图/多标签页的页面需要逐个触发才把各自的内容插进 DOM.
+                try:
+                    expr = f"document.querySelectorAll({json.dumps(click_all)}).forEach(e => e.click())"
+                    await page.evaluate(expr)
+                except Exception as exc:
+                    logger.debug("browser click_all failed (ignored)", selector=click_all, error=str(exc))
+            if scroll > 0:
+                for _ in range(scroll):
+                    try:
+                        await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                    except Exception as exc:
+                        logger.debug("browser scroll failed (ignored)", error=str(exc))
+                        break
+                    await asyncio.sleep(0.6)
+            if click is not None or click_all is not None or scroll > 0:
+                # 交互会触发新的 XHR/懒加载: 给它们一个有上限的静默窗口, 再读正文.
+                budget = min(_INTERACTION_IDLE_MS, _remaining_ms(deadline))
+                if budget > 0:
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=budget)
+                    except Exception as exc:
+                        logger.debug("network idle after interaction timed out", error=str(exc))
+                try:
+                    content = await page.content()
+                except Exception as exc:
+                    logger.debug("content reread after interaction failed", error=str(exc))
             return content, None
         except _BackendClosed:
             return None, RequestFailure(kind=FailureKind.UNEXPECTED, message="browser backend closed")
@@ -471,8 +533,10 @@ class PatchrightBackend(_LocalBackend):
         from patchright.async_api import async_playwright
 
         playwright = await stack.enter_async_context(async_playwright())
+        # 默认走系统 Chrome; 只装了 chromium 的环境 (容器 / WSL) 用 AMANE_BROWSER_CHANNEL 置空切换.
+        channel = os.getenv("AMANE_BROWSER_CHANNEL", "chrome") or None
         browser = await playwright.chromium.launch(
-            channel="chrome",
+            channel=channel,
             headless=os.getenv("AMANE_SHOW_BROWSER") is None,
             args=["--disable-blink-features=AutomationControlled"],
             proxy={"server": self._proxy} if self._proxy else None,
@@ -538,9 +602,18 @@ class SolverBackend:
         wait_for: str | None = None,
         timeout: float | None = None,
         network_idle_timeout: float | None = None,
+        click: str | None = None,
+        click_all: str | None = None,
+        scroll: int = 0,
     ) -> BrowserPageResult:
-        if wait_for is not None or network_idle_timeout is not None:
-            logger.debug("solver ignores wait_for and network idle timeout", scope=scope)
+        if (
+            wait_for is not None
+            or network_idle_timeout is not None
+            or click is not None
+            or click_all is not None
+            or scroll
+        ):
+            logger.debug("solver ignores wait_for, network idle, click and scroll", scope=scope)
         effective = timeout if timeout is not None else self._default_timeout
         async with self._semaphore, self._lock_for(scope):
             try:

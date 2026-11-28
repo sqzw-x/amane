@@ -576,6 +576,44 @@ class TestTwoPhaseExecution:
         assert state.result.field_sources["studio"] == "javdb"
 
     @pytest.mark.asyncio
+    async def test_last_resort_skipped_when_others_hit(self):
+        """有来源拿到数据时不调最后手段: 这类来源要多花钱, 不能每次刮削都触发."""
+        fp = defaultdict(lambda: [DB, OFF])
+        graph = build_graph(fp, {})
+
+        hit = RecordingCrawler(_full_metadata(number="X", title="T_DB"))
+        fallback = RecordingCrawler(_full_metadata(number="X", title="T_OFF"))
+
+        state = await execute_graph(
+            graph,
+            {K1: hit, str(OFF): fallback},
+            SearchQuery("X"),
+            last_resort_sites=frozenset({OFF}),
+        )
+
+        assert fallback.queries == []  # 没被调用
+        assert state.result.title == "T_DB"
+
+    @pytest.mark.asyncio
+    async def test_last_resort_runs_when_others_all_miss(self):
+        """前面的来源全没结果时才调最后手段, 并带上已完成节点的快照."""
+        fp = defaultdict(lambda: [DB, OFF])
+        graph = build_graph(fp, {})
+
+        miss = MockCrawler(None)
+        fallback = RecordingCrawler(_full_metadata(number="X", title="T_OFF"))
+
+        state = await execute_graph(
+            graph,
+            {K1: miss, str(OFF): fallback},
+            SearchQuery("X"),
+            last_resort_sites=frozenset({OFF}),
+        )
+
+        assert len(fallback.queries) == 1
+        assert state.result.title == "T_OFF"
+
+    @pytest.mark.asyncio
     async def test_no_first_phase_gives_empty_partial(self):
         """路由只有声明来源: 第二段仍执行, partial 是空对象而非 None."""
         fp = defaultdict(lambda: [OFF])

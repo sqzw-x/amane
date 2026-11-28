@@ -181,6 +181,10 @@ _WESTERN_NAMES: dict[str, str] = {
     "blackedraw": "BlackedRaw",
 }
 
+#: 订阅平台的命名没有统一番号: 方括号标记之后就是作品名.
+_PLATFORM_TAG = re.compile(r"^\s*[\[(【]\s*(?:manyvids|hobbyporn|fansdb|onlyfans|fansly)\s*[\])】]\s*", re.IGNORECASE)
+#: OnlyFans 的 ``of.YYYY.`` 前缀同样是平台标记, 不是番号.
+_ONLYFANS_PREFIX = re.compile(r"^\s*of[.\-]\d{4}[.\-]", re.IGNORECASE)
 _CATALOG_NUMBER = re.compile(r"[A-Z]{2,}-\d{2,}[Z]?")
 #: 字母与数字同在前缀内的番号 (R18-292). 过宽回退会匹配其中的 18-292, 因此须在其之前按整段提取.
 _DIGIT_PREFIX_CATALOG = re.compile(r"[A-Z]{1,4}\d{1,4}-\d{2,4}[A-Z]?")
@@ -482,6 +486,14 @@ def _prepare(basename: str, escape_strings: list[str]) -> _Prepared:
     return _Prepared(escaped=escaped, dated=dated, catalog=catalog)
 
 
+def _platform_title(text: str) -> str:
+    """平台命名里去掉尾部日期与分辨率, 剩下的作番号: TPDB 按作品名检索, 留着日期会一条也命中不了."""
+    value = re.sub(r"\s*[\[(（【]\s*\d{2}[-_.]\d{2}[-_.]\d{2,4}\s*[\])）】]", "", text)
+    value = re.sub(r"\s+\d{3,4}[pP]\b", "", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" -_.")
+
+
 def _remove_escape_strings(filename: str, escape_strings: list[str]) -> str:
     upper = filename.upper()
     for string in escape_strings:
@@ -512,6 +524,17 @@ def _identify(
 
 def _match(basename: str, escape_strings: list[str], *, generic: bool) -> tuple[str, ContentType] | None:
     """命中已知形态则 (番号, 类型), 否则 None. 不含文件名回退."""
+    # 订阅平台命名优先: 这类文件名里的字母数字段会被更宽的规则误当成番号
+    # (of.2024.xxx → OF-2024 还被判成有码), 而它们的真正身份就是作品名.
+    if platform := _PLATFORM_TAG.match(basename):
+        title = _platform_title(basename[platform.end() :])
+        if title:
+            return title, ContentType.WESTERN
+    if _ONLYFANS_PREFIX.match(basename):
+        title = _platform_title(_ONLYFANS_PREFIX.sub("", basename))
+        if title:
+            return title, ContentType.WESTERN
+
     t = _prepare(basename, escape_strings)
     c, escaped, dated = t.catalog, t.escaped, t.dated
 

@@ -209,3 +209,4 @@ androidapp/*.keystore
 
 # parley discussion workspaces created by tooling — never track
 .parley/
+pr/

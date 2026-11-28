@@ -299,12 +299,31 @@ async def _resolve_local(url: str, store: ResourceStore, client: WebClient) -> P
     return await store.acquire(url, client)
 
 
+def _is_playlist(url: str) -> bool:
+    """HLS 播放列表不是视频: 落盘只会得到几百字节的文本, 播放器也打不开."""
+    return url.lower().split("?", 1)[0].endswith(".m3u8")
+
+
 async def _acquire_first_local(urls: list[str], store: ResourceStore, client: WebClient) -> Path | None:
     for url in urls:
+        if _is_playlist(url):
+            continue
         path = await _resolve_local(url, store, client)
         if path:
             return path
     return None
+
+
+async def _acquire_all_local(urls: list[str], store: ResourceStore, client: WebClient) -> list[Path]:
+    """按候选顺序取全部可下载的本地文件; 拿不到的跳过, 不阻断其余."""
+    found: list[Path] = []
+    for url in urls:
+        if _is_playlist(url):
+            continue
+        path = await _resolve_local(url, store, client)
+        if path:
+            found.append(path)
+    return found
 
 
 def _write_into_library(source: Path, target: Path) -> None:
@@ -334,7 +353,7 @@ def _place_library_images(
     *,
     thumb_local: Path | None,
     poster_local: Path | None,
-    trailer_local: Path | None,
+    trailer_locals: Sequence[Path],
     extrafanart_targets: Sequence[tuple[str, Path]],
     kinds: set[DownloadableResource],
     config: HotSettings | None,
@@ -368,9 +387,22 @@ def _place_library_images(
                 jpeg_quality=config.scraping.jpeg_quality,
             )
 
-    if trailer_local is not None and DownloadableResource.trailer in kinds:
-        paths.trailer.parent.mkdir(parents=True, exist_ok=True)
-        _write_into_library(trailer_local, paths.trailer)
+    if trailer_locals and DownloadableResource.trailer in kinds:
+        if len(trailer_locals) == 1:
+            paths.trailer.parent.mkdir(parents=True, exist_ok=True)
+            _write_into_library(trailer_locals[0], paths.trailer)
+        else:
+            # 多个预告片: Emby 的 trailers 子目录可以放任意多个、文件名随意, 媒体服务器按顺序列出.
+            trailers_dir = paths.trailer.parent / "trailers"
+            trailers_dir.mkdir(parents=True, exist_ok=True)
+            stem = paths.video.stem
+            # 先清掉上一轮的同名产物: 候选数量变少时, 多出来的旧序号不能留在库里.
+            for stale in trailers_dir.glob(f"{stem}-trailer*.mp4"):
+                stale.unlink(missing_ok=True)
+            for index, local in enumerate(trailer_locals, start=1):
+                _write_into_library(local, trailers_dir / f"{stem}-trailer{index}.mp4")
+            # 单文件模式留下的 trailer.mp4 也要清掉, 否则同一部片有两个预告片.
+            paths.trailer.unlink(missing_ok=True)
 
     if extrafanart_targets and DownloadableResource.extrafanart in kinds:
         paths.extrafanart_dir.mkdir(parents=True, exist_ok=True)
@@ -429,10 +461,17 @@ async def _download_images_via_store(
         poster_urls = metadata.poster_urls
         poster_local = await _acquire_first_local(poster_urls, store, client) if poster_urls else None
 
-    trailer_local = None
+    trailer_locals: list[Path] = []
     if DownloadableResource.trailer in kinds:
         trailer_urls = metadata.trailer_urls
-        trailer_local = await _acquire_first_local(trailer_urls, store, client) if trailer_urls else None
+        if trailer_urls:
+            if config is not None and config.scraping.multi_trailer:
+                # 多预告片: 全部落盘, 由落盘阶段写进 trailers/ 子目录.
+                trailer_locals = await _acquire_all_local(trailer_urls, store, client)
+            else:
+                first = await _acquire_first_local(trailer_urls, store, client)
+                if first is not None:
+                    trailer_locals = [first]
 
     extrafanart: list[Path] = []
     if DownloadableResource.extrafanart in kinds:
@@ -452,7 +491,7 @@ async def _download_images_via_store(
         paths,
         thumb_local=thumb_local,
         poster_local=poster_local,
-        trailer_local=trailer_local,
+        trailer_locals=trailer_locals,
         extrafanart_targets=extrafanart_targets,
         kinds=kinds,
         config=config,

@@ -12,12 +12,14 @@ class SiteName(StrEnum):
     C0930 = "c0930"
     CARIBBEANCOM = "caribbeancom"
     DAHLIA = "dahlia"
+    DATA18 = "data18"
     DMM = "dmm"
     FALENO = "faleno"
     FC2 = "fc2"
     FC2CLUB = "fc2club"
     FC2PPVDB = "fc2ppvdb"
     FREEJAVBT = "freejavbt"
+    GAMMA = "gamma"
     GETCHU = "getchu"
     GFRIENDS = "gfriends"
     GIGA = "giga"
@@ -34,6 +36,8 @@ class SiteName(StrEnum):
     MINNANO = "minnano"
     MURAMURA = "muramura"
     OFFICIAL = "official"
+    OFFICIAL_AI = "official_ai"
+    OFFICIAL_GENERIC = "official_generic"
     PACOPACOMAMA = "pacopacomama"
     PRESTIGE = "prestige"
     R18DEV = "r18dev"
@@ -60,6 +64,14 @@ class BrowserBackendName(StrEnum):
 
 
 # 来源的浏览器使用策略: ALWAYS 一律渲染, OFF 一律直连, AUTO 直连遇挑战后切换.
+class TrailerMode(StrEnum):
+    """来源提供多种视频时的抓取范围: 完整预告片 / 预览片 / 两者."""
+
+    TRAILER = "trailer"
+    PREVIEW = "preview"
+    ALL = "all"
+
+
 class BrowserMode(StrEnum):
     OFF = "off"
     AUTO = "auto"

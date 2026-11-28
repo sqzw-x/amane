@@ -10,12 +10,15 @@ from .d2pass import (
     TenMusumeCrawler,
 )
 from .dahlia import DahliaCrawler
+from .data18 import Data18Crawler
 from .dmm import DmmCrawler
 from .faleno import FalenoCrawler
 from .fc2 import FC2Crawler
 from .fc2club import FC2ClubCrawler
 from .fc2ppvdb import FC2PPVDBCrawler
 from .freejavbt import FreejavbtCrawler
+from .gamma import GammaCrawler
+from .generic_official import GenericOfficialCrawler
 from .getchu import GetchuCrawler
 from .giga import GigaCrawler
 from .h4610 import C0930Crawler, H0930Crawler, H4610Crawler
@@ -28,12 +31,14 @@ from .javlibrary import JavLibraryCrawler
 from .kin8 import Kin8Crawler
 from .mgstage import MGStageCrawler
 from .official import OfficialCrawler
+from .official_ai import AiOfficialCrawler
 from .prestige import PrestigeCrawler
 from .r18dev import R18DevCrawler
 from .theporndb import ThePornDBCrawler
 from .xcity import XCityCrawler
 
 __all__ = [
+    "AiOfficialCrawler",
     "AiravCrawler",
     "AvbaseCrawler",
     "AvsoxCrawler",
@@ -41,12 +46,15 @@ __all__ = [
     "CaribbeanComCrawler",
     "D2PassCrawler",
     "DahliaCrawler",
+    "Data18Crawler",
     "DmmCrawler",
     "FC2ClubCrawler",
     "FC2Crawler",
     "FC2PPVDBCrawler",
     "FalenoCrawler",
     "FreejavbtCrawler",
+    "GammaCrawler",
+    "GenericOfficialCrawler",
     "GetchuCrawler",
     "GigaCrawler",
     "H0930Crawler",

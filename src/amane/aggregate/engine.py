@@ -137,6 +137,8 @@ async def aggregate(
     on_progress: ProgressCallback | None = None,
     multi_lang_sites: frozenset[SourceName] = MULTI_LANGUAGE_SOURCE_IDS,
     deferred_sites: frozenset[SourceName] = frozenset(),
+    last_resort_sites: frozenset[SourceName] = frozenset(),
+    previous_homepages: Sequence[str] = (),
     load_rules: LoadRules | None = None,
 ) -> AggregateResult:
     fl = field_language or {}
@@ -151,6 +153,8 @@ async def aggregate(
         snapshots,
         on_progress=on_progress,
         deferred_sites=deferred_sites,
+        last_resort_sites=last_resort_sites,
+        previous_homepages=previous_homepages,
         load_rules=load_rules,
     )
 
@@ -204,11 +208,15 @@ async def execute_graph(
     db_cache: Mapping[SourceKey, dict] | None = None,
     on_progress: ProgressCallback | None = None,
     deferred_sites: frozenset[SourceName] = frozenset(),
+    last_resort_sites: frozenset[SourceName] = frozenset(),
+    previous_homepages: Sequence[str] = (),
     load_rules: LoadRules | None = None,
 ) -> ExecutionState:
     """两段并发请求; 段间给声明来源注入已定值单源字段与第一段已抓到的图片地址, 全部结束后按字段链拼接多源字段."""
     snapshots = db_cache or {}
     state = ExecutionState(number=query.number)
+    # 上次找到的官网链接先放进快照: 通用官网源据此免掉一次模型推断.
+    state.result.homepage_urls.extend(previous_homepages)
     deferred = {str(site) for site in deferred_sites}
     field_total = len(SCALAR_FIELDS)
 
@@ -219,12 +227,15 @@ async def execute_graph(
             state.fetched[node.cache_key] = None
 
     available = [node for node in graph.nodes if node.site in crawlers]
-    first = [node for node in available if node.site not in deferred]
-    second = [node for node in available if node.site in deferred]
+    last_resort = {str(site) for site in last_resort_sites}
+    first = [node for node in available if node.site not in deferred and node.site not in last_resort]
+    second = [node for node in available if node.site in deferred and node.site not in last_resort]
+    fallback = [node for node in available if node.site in last_resort]
     current().debug(
         "fetch phases",
         first=[node.cache_key for node in first],
         second=[node.cache_key for node in second],
+        fallback=[node.cache_key for node in fallback],
     )
 
     queried: set[tuple[FacetKind, str]] = set()
@@ -235,18 +246,44 @@ async def execute_graph(
 
     if second:
         # 链上未执行的节点会中断对应字段, 第二段结果不会被段间解析抢先定值.
-        partial = copy.deepcopy(state.result)
-        # 段间图片地址只装配第一段节点: 第二段贡献尚未取得, 它在链上的位置也无从预知.
-        _assemble_url_fields(graph, state.fetched, partial, cache_keys={node.cache_key for node in first})
+        partial = _partial_snapshot(graph, state, first)
         await _fetch_phase(state, second, query, crawlers, snapshots, partial)
         # 第二段新增的名字单独补查; 第一段已定值的字段不再取值, 不重复查.
         rules = await _load_rules(load_rules, graph, state, queried, base=rules)
         _resolve_scalars(graph, state, rules)
         await _report_progress(on_progress, state, second, field_total)
 
+    # 最后手段: 只有前面所有来源都没拿到"官网级"数据时才调用. 这类来源通常成本高 (调模型),
+    # 每次都跑会白白消耗. 判据取官网预告片而非任意字段: 元数据站能给标题演员, 却给不出发行方
+    # 自己的预告片与剧照, 那正是这类来源要找的东西.
+    if fallback and not any(
+        data.trailer_urls for node in (*first, *second) if (data := state.fetched.get(node.cache_key)) is not None
+    ):
+        partial = _partial_snapshot(graph, state, (*first, *second))
+        await _fetch_phase(state, fallback, query, crawlers, snapshots, partial)
+        _resolve_scalars(graph, state)
+        await _report_progress(on_progress, state, fallback, field_total)
+
     _assemble_aggregate_fields(graph, state)
     _fill_actor_genders(state.result, state.fetched)
     return state
+
+
+def _partial_snapshot(graph: FetchGraph, state: ExecutionState, done: Sequence[FetchNode]) -> AggregatedMetadata:
+    """段间快照: 已完成节点的字段定值 + 图片地址 + 官网链接.
+
+    图片只装配已跑完的节点: 后续段的贡献尚未取得, 它在链上的位置也无从预知.
+    官网链接也要传下去, 通用官网源靠它才知道抓哪里.
+    """
+    partial = copy.deepcopy(state.result)
+    _assemble_url_fields(graph, state.fetched, partial, cache_keys={node.cache_key for node in done})
+    for data in state.fetched.values():
+        if data is None:
+            continue
+        for url in data.homepage_urls:
+            if url not in partial.homepage_urls:
+                partial.homepage_urls.append(url)
+    return partial
 
 
 async def _fetch_phase(
@@ -607,6 +644,9 @@ def _assemble_aggregate_fields(graph: FetchGraph, state: ExecutionState) -> None
             state.result.external_ids[ck] = data.external_id
         if data.source_url and ck not in state.result.source_urls:
             state.result.source_urls[ck] = data.source_url
+        for url in data.homepage_urls:
+            if url not in state.result.homepage_urls:
+                state.result.homepage_urls.append(url)
 
 
 def _normalize_source_text(meta: MediaMetadata) -> MediaMetadata:

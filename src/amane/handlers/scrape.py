@@ -66,6 +66,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         self._multi_language_sources = frozenset(d.id for d in catalog if SourceTrait.MULTI_LANGUAGE in d.traits)
         self._partial_sources = frozenset(d.id for d in catalog if SourceTrait.NEEDS_PARTIAL in d.traits)
         self._file_hash_sources = frozenset(d.id for d in catalog if SourceTrait.USES_FILE_HASH in d.traits)
+        self._last_resort_sources = frozenset(d.id for d in catalog if SourceTrait.LAST_RESORT in d.traits)
 
     async def handle(self, payload: ScrapePayload) -> TaskResult[ScrapeResult]:
         bind_contextvars(number=payload.number)
@@ -74,10 +75,11 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         progress_total = len(SCALAR_FIELDS) + _PROGRESS_POST_STEPS
         rec = current()
 
-        # 启用 metadata 缓存时读取 raw 快照.
+        # 总是读一次上次结果: 官网类来源记下的作品页要复用, 否则每次都得让模型再推断一遍.
+        # 只有启用 metadata 缓存时, 它的 raw 快照才参与"跳过重复抓取".
         use_metadata_cache = CacheKind.metadata in payload.use_cache
-        db_data = await self._repo.get_metadata_by_number(payload.number) if use_metadata_cache else None
-        if db_data is not None and db_data.raw:
+        db_data = await self._repo.get_metadata_by_number(payload.number)
+        if db_data is not None and db_data.raw and use_metadata_cache:
             rec.write_raw_cache(db_data.raw)
 
         # 校验 content_type 路由; 无资格站点则失败.
@@ -126,10 +128,12 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             crawlers,
             field_priority,
             field_language,
-            db_data.raw if db_data else None,
+            db_data.raw if db_data is not None and use_metadata_cache else None,
             on_progress=_on_fetch_progress,
             multi_lang_sites=self._multi_language_sources,
             deferred_sites=frozenset(name for name in crawlers if name in self._partial_sources),
+            last_resort_sites=frozenset(name for name in crawlers if name in self._last_resort_sources),
+            previous_homepages=_previous_homepages(db_data),
             load_rules=self._load_rules,
         )
 
@@ -358,3 +362,17 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
         if result:
             current().debug("field translated", field=str(field), target=str(target))
         return result
+
+
+#: 官网类来源: 它们记下的 source_url 就是作品页地址, 下次可直接复用, 不必再让模型推断.
+_OFFICIAL_SOURCES = frozenset({"official", "official_generic", "official_ai"})
+
+
+def _previous_homepages(db_data: object) -> list[str]:
+    """上次刮削里官网类来源记下的作品页地址."""
+    if db_data is None:
+        return []
+    source_urls = getattr(db_data, "source_urls", None)
+    if not isinstance(source_urls, dict):
+        return []
+    return [url for site, url in source_urls.items() if site in _OFFICIAL_SOURCES and isinstance(url, str)]

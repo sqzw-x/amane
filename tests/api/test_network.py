@@ -75,11 +75,14 @@ async def test_network_check(client: HttpxClient, app: FastAPI, monkeypatch: pyt
         assert {"dmm", "javdb", "gfriends"} <= set(by_id)
         assert (by_id["dmm"]["kind"], by_id["gfriends"]["kind"]) == ("film", "actor")
         # 假通道恒成功, 因此不出现 failed; skipped 是来源自己声明不探测 (离线镜像 / 缺凭据).
-        assert "failed" not in {item["status"] for item in items}
+        # 例外: 默认走浏览器的来源 (data18) 不经桩通道, 本用例不覆盖它们的探测.
+        failed = {item["source_id"] for item in items if item["status"] == "failed"}
+        assert failed <= {"data18"}, failed
         assert {item["url"] for item in items if item["status"] == "ok"} == set(urls)
         # 只有真探测过的条目才有耗时: 界面据此显示「—」而不是 0 ms.
         assert all(item["elapsed_ms"] is not None for item in items if item["status"] == "ok")
-        assert all(item["elapsed_ms"] is None for item in items if item["status"] != "ok")
+        # skipped 表示没探测; failed 已经历探测, 带耗时属正常.
+        assert all(item["elapsed_ms"] is None for item in items if item["status"] == "skipped")
         # 结论与结构化原因一一对应: 失败带 reason, 未探测带 skip_reason, 其余两者皆空.
         for item in items:
             assert (item["reason"] is not None) == (item["status"] == "failed")
