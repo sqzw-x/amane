@@ -8004,7 +8004,12 @@ export type DeleteFacetData = {
          */
         facet_id: number;
     };
-    query?: never;
+    query?: {
+        /**
+         * Add Rule
+         */
+        add_rule?: boolean;
+    };
     url: '/api/facets/{kind}/{facet_id}';
 };
 

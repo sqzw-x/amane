@@ -3887,7 +3887,7 @@
           "facets"
         ],
         "summary": "Delete Facet",
-        "description": "删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删.",
+        "description": "删除分类并从 Metadata 真值移除该名字.\n\n``add_rule`` 为真时另写剔除规则, 名字不会在下次刮削时复活; 否则只删实体, 由用户显式选择.\nuser_tag 硬删, 不进规则表.",
         "operationId": "delete_facet",
         "parameters": [
           {
@@ -3905,6 +3905,16 @@
             "schema": {
               "type": "integer",
               "title": "Facet Id"
+            }
+          },
+          {
+            "name": "add_rule",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Add Rule"
             }
           }
         ],

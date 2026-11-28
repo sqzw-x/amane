@@ -20,7 +20,7 @@ from structlog.contextvars import bind_contextvars
 from ..config.manager import LANG_METADATA_FIELD_SET
 from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from ..crawlers.site_roles import MULTI_LANGUAGE_SOURCE_IDS
-from ..db.facet_rules import ResolvedField, RuleEntry, RuleSet, resolve_field_value
+from ..db.facet_rules import ResolvedField, RuleEntry, RulesByKind, resolve_field_value
 from ..db.models import FacetKind
 from ..enums import ActorGender, Language, MetadataField, SiteName
 from ..observability import current, invoke_source
@@ -30,7 +30,7 @@ from .models import AggregatedMetadata, AggregateResult, SourcedScore
 type ProgressCallback = Callable[[int, int, str], Coroutine[Any, Any, None]]
 # 按候选名取治理规则; 返回 None 表示没有可用的规则来源, 此时分类字段不折叠.
 type RuleQuery = Mapping[FacetKind, Sequence[str]]
-type LoadRules = Callable[[RuleQuery], Coroutine[Any, Any, RuleSet | None]]
+type LoadRules = Callable[[RuleQuery], Coroutine[Any, Any, RulesByKind | None]]
 
 SCALAR_FIELDS: list[MetadataField] = [
     MetadataField.TITLE,
@@ -273,8 +273,8 @@ async def _load_rules(
     graph: FetchGraph,
     state: ExecutionState,
     queried: set[tuple[FacetKind, str]],
-    base: RuleSet | None = None,
-) -> RuleSet | None:
+    base: RulesByKind | None = None,
+) -> RulesByKind | None:
     """按本段已抓结果与未定值字段收集候选名, 一次取回规则; 没有候选名时不发查询.
 
     ``queried`` 记录已发出的名字, 与命中与否无关: 规则表里没有对应行的名字同样不再重查.
@@ -293,11 +293,10 @@ async def _load_rules(
         return base
     if base is None:
         return fetched
-    merged: dict[FacetKind, dict[str, RuleEntry]] = {kind: dict(rules) for kind, rules in base.rules.items()}
-    for kind, rules in fetched.rules.items():
+    merged: dict[FacetKind, dict[str, RuleEntry]] = {kind: dict(rules) for kind, rules in base.items()}
+    for kind, rules in fetched.items():
         merged.setdefault(kind, {}).update(rules)
-    merged_display = {**base.actor_display, **fetched.actor_display}
-    return RuleSet(rules=merged, actor_display=merged_display)
+    return merged
 
 
 def _names_to_query(
@@ -356,13 +355,13 @@ def pending_rule_names(
     return {kind: found for kind, found in names.items() if found}
 
 
-def _resolve_scalars(graph: FetchGraph, state: ExecutionState, rules: RuleSet | None = None) -> None:
+def _resolve_scalars(graph: FetchGraph, state: ExecutionState, rules: RulesByKind | None = None) -> None:
     """沿字段链取第一个非空值. 链上仍有未处理节点时中断该字段, 不取后面已返回的站.
 
     分类字段先按治理规则收敛再判空: 被剔除的取值不算命中, 继续下一个站;
     多值字段整份剔除后为空时同样回退, 部分保留照常采用.
     """
-    applicable = RuleSet(rules={}) if rules is None else rules
+    applicable = rules or {}
     for field in SCALAR_FIELDS:
         if field in state.result.field_sources:
             continue

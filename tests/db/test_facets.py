@@ -540,7 +540,7 @@ class TestFacetRenameMergeDelete:
             meta = await _seed_list(repo, f"BL-{kind}-1", kind, ["Alice", "Bob"])
             assert meta.id is not None
             facet_id = await _facet_id(repo, kind, "Alice")
-            assert await repo.delete_facet(kind, facet_id) is True
+            assert await repo.delete_facet(kind, facet_id, add_rule=True) is True
             got = await repo.get_metadata(meta.id)
             assert got is not None
             assert "Alice" not in _list_names(got, kind)
@@ -583,7 +583,7 @@ class TestFacetRenameMergeDelete:
             bid_b = await _facet_id(repo, kind, "BlkB")
             assert await repo.merge_facets(kind, bid_b, [bid_a]) is not None
             bid_b2 = await _facet_id(repo, kind, "BlkB")
-            assert await repo.delete_facet(kind, bid_b2) is True
+            assert await repo.delete_facet(kind, bid_b2, add_rule=True) is True
             blocked = {r.source_name: r for r in await repo.list_facet_rules(kind)}
             assert blocked["BlkA"].action == FacetRuleAction.BLOCK
             assert blocked["BlkB"].action == FacetRuleAction.BLOCK
@@ -662,7 +662,7 @@ class TestFacetRenameMergeDelete:
         meta = await repo.upsert_metadata(number="RULE-1", actors=["Alice"])
         assert meta.id is not None
         facet_id = await _facet_id(repo, FacetKind.ACTOR, "Alice")
-        assert await repo.delete_facet(FacetKind.ACTOR, facet_id) is True
+        assert await repo.delete_facet(FacetKind.ACTOR, facet_id, add_rule=True) is True
         rules = await repo.list_facet_rules(FacetKind.ACTOR)
         rule = next(r for r in rules if r.source_name == "Alice")
         assert rule.id is not None
@@ -852,7 +852,7 @@ class TestActorUserTags:
         alice = await _facet_id(repo, FacetKind.ACTOR, "Alice")
         (tag_id,) = await _tag_ids(repo, "收藏")
         await repo.apply_actor_user_tags([alice], [tag_id], action="attach")
-        assert await repo.delete_facet(FacetKind.ACTOR, alice) is True
+        assert await repo.delete_facet(FacetKind.ACTOR, alice, add_rule=True) is True
         async with repo._session() as session:
             remaining = (await session.exec(select(ActorUserTag).where(col(ActorUserTag.actor_id) == alice))).all()
             assert list(remaining) == []
@@ -889,3 +889,41 @@ class TestActorUserTags:
         async with repo._session() as session:
             orphans = (await session.exec(select(ActorUserTag).where(col(ActorUserTag.actor_id) == source_id))).all()
             assert list(orphans) == []
+
+
+class TestDeleteWithoutRule:
+    """删除默认不写规则: 名字会在下次刮削复活, 由用户显式选择."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_leaves_rule_table_untouched(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="DEL-1", series="被删系列", tags=["被删标签"])
+        series_id = await _facet_id(repo, FacetKind.SERIES, "被删系列")
+        tag_id = await _facet_id(repo, FacetKind.TAG, "被删标签")
+
+        assert await repo.delete_facet(FacetKind.SERIES, series_id) is True
+        assert await repo.delete_facet(FacetKind.TAG, tag_id) is True
+
+        assert await repo.list_facet_rules(FacetKind.SERIES) == []
+        assert await repo.list_facet_rules(FacetKind.TAG) == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_delete_with_rule_blocks_name(self, repo: Repository) -> None:
+        await repo.upsert_metadata(number="DEL-2", series="拉黑系列")
+        series_id = await _facet_id(repo, FacetKind.SERIES, "拉黑系列")
+
+        assert await repo.delete_facet(FacetKind.SERIES, series_id, add_rule=True) is True
+
+        rules = await repo.list_facet_rules(FacetKind.SERIES)
+        assert [(rule.source_name, rule.action) for rule in rules] == [("拉黑系列", FacetRuleAction.BLOCK)]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_deleted_name_revives_without_rule(self, repo: Repository) -> None:
+        """不写规则时, 同名再刮削会新建实体而不是被剔除."""
+        await repo.upsert_metadata(number="DEL-3", series="复活系列")
+        series_id = await _facet_id(repo, FacetKind.SERIES, "复活系列")
+        assert await repo.delete_facet(FacetKind.SERIES, series_id) is True
+
+        refreshed = await repo.upsert_metadata(number="DEL-3", series="复活系列")
+
+        assert refreshed.series == "复活系列"
+        assert await repo.list_facet_rules(FacetKind.SERIES) == []

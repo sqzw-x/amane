@@ -22,12 +22,9 @@ from ..facet_rules import (
     RuleEntry,
     RuleRow,
     RulesByKind,
-    RuleSet,
     apply_metadata_facet_fields,
     empty_rules_by_kind,
-    facet_field_values,
     resolve_name,
-    rule_lookup_names,
     rules_from_rows,
 )
 from ..models import (
@@ -617,7 +614,7 @@ async def load_all_rules(session: AsyncSession) -> dict[FacetKind, dict[str, Rul
     """全表读取治理规则.
 
     只有批量治理 (改名 / 合并 / 删除) 用它: 它们要按任意旧名反查入边, 候选名无法预先枚举.
-    条目写入与刮削取值走 ``load_rules_for_names``, 代价与规则表规模无关.
+    刮削取值走 ``load_rules_for_names`` (只查候选名); 条目写入仍读全表, 那里要判解析后的展示名, 候选名无法预先枚举.
     """
     out = empty_rules_by_kind()
     stored: list[tuple[FacetKind, str, FacetRuleAction, str | None]] = []
@@ -635,20 +632,15 @@ async def load_all_rules(session: AsyncSession) -> dict[FacetKind, dict[str, Rul
     return out
 
 
-async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, Collection[str]]) -> RuleSet:
+async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, Collection[str]]) -> RulesByKind:
     """按候选名定向读取治理数据; 单跳在同一次查询内判完.
 
     每次探测走 ``(kind, source_name)`` 唯一索引, 因此代价随候选名个数线性增长、随规则表规模对数增长, 不做全表扫.
     外连接把 alias 目标的 action 一并取回, 目标被 block 的别名在结果里直接收敛为 block.
-    演员候选名另带上别名表映射出的展示名, 与映射一起返回: 取值期与写库期据此判到同一批名字.
     候选名总数超过一条语句的绑定上限时才分批.
     """
-    display = await _alias_display_names(session, names.get(FacetKind.ACTOR, ()))
-    candidates = {kind: set(found) for kind, found in names.items()}
-    if display:
-        candidates.setdefault(FacetKind.ACTOR, set()).update(name for names in display.values() for name in names)
     out = empty_rules_by_kind()
-    pairs = [(kind, name) for kind, found in candidates.items() for name in sorted(found)]
+    pairs = [(kind, name) for kind, found in names.items() for name in sorted(set(found))]
     target = aliased(FacetRule)
     for batch in chunks(pairs):
         # 命中行连同 alias 目标行的 action 一起取回; 目标行不存在时该列为 None.
@@ -666,43 +658,7 @@ async def load_rules_for_names(session: AsyncSession, names: Mapping[FacetKind, 
         ]
         for row_kind, rules in rules_from_rows(rows).items():
             out[row_kind].update(rules)
-    return RuleSet(rules=out, actor_display=display)
-
-
-async def _alias_display_names(session: AsyncSession, actor_names: Collection[str]) -> dict[str, frozenset[str]]:
-    """入参名在别名表命中的全部展示名, 以入参名为键.
-
-    歧义别名 (多个演员共享同一别名) 时保留全部候选而不是挑一个: 判定取「任一被剔除即剔除」,
-    结论因此与查询返回顺序无关.
-    """
-    candidates: set[str] = set()
-    for raw in actor_names:
-        if not raw:
-            continue
-        name = split_actor_aliases(raw)[0]
-        if name:
-            candidates.add(name)
-    if not candidates:
-        return {}
-    stmt = (
-        select(col(ActorAlias.name), col(Actor.name))
-        .join(Actor, col(Actor.id) == col(ActorAlias.actor_id))
-        .where(col(ActorAlias.name).in_(sorted(candidates)))
-    )
-    found: dict[str, set[str]] = {}
-    for alias, name in (await session.exec(stmt)).all():
-        if alias != name:
-            found.setdefault(alias, set()).add(name)
-    return {alias: frozenset(names) for alias, names in found.items()}
-
-
-async def load_rules_for_row(session: AsyncSession, meta: Metadata) -> RulesByKind:
-    """按这一行当前的六个分类取值定向读取规则, 一次查询取全.
-
-    演员候选名由 ``load_rules_for_names`` 内部并入别名表的展示名, 清洗阶段解析出的展示名
-    因此也在查找范围内; 写路径不额外往返.
-    """
-    return (await load_rules_for_names(session, rule_lookup_names(facet_field_values(meta)))).rules
+    return out
 
 
 async def apply_facet_rules_to_metadata(session: AsyncSession, meta: Metadata, rules_by_kind: RulesByKind) -> None:
@@ -907,8 +863,13 @@ async def _actor_delete_block_names(session: AsyncSession, actor: Actor) -> set[
     return blocked
 
 
-async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_id: int) -> bool:
-    """写剔除规则, 从真值移除名字后删除实体; 提交由调用方负责."""
+async def delete_link_facet(
+    session: AsyncSession, spec: _LinkFacetSpec, facet_id: int, *, add_rule: bool = False
+) -> bool:
+    """删除实体并从真值移除名字; 提交由调用方负责.
+
+    ``add_rule`` 为真时同时写剔除规则; 否则只删实体, 名字会随下次刮削复活 —— 由用户显式选择.
+    """
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
@@ -916,10 +877,11 @@ async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_i
         if spec.kind == FacetKind.ACTOR:
             assert isinstance(entity, Actor)
             blocked = await _actor_delete_block_names(session, entity)
+        else:
+            blocked = {entity.name}
+        if add_rule:
             for name in blocked:
                 await _upsert_block(session, spec.kind, name)
-        else:
-            blocked = await _upsert_block(session, spec.kind, entity.name)
         await _strip_names_from_link_metadata(session, spec, blocked)
     await session.exec(sqla_delete(spec.link).where(col(spec.link_fk) == facet_id))
     if spec.kind == FacetKind.ACTOR:
@@ -930,12 +892,14 @@ async def delete_link_facet(session: AsyncSession, spec: _LinkFacetSpec, facet_i
     return True
 
 
-async def delete_scalar_facet(session: AsyncSession, spec: _ScalarFacetSpec, facet_id: int) -> bool:
-    """写剔除规则并清空真值里的该标量; 提交由调用方负责."""
+async def delete_scalar_facet(
+    session: AsyncSession, spec: _ScalarFacetSpec, facet_id: int, *, add_rule: bool = False
+) -> bool:
+    """清空真值里的该标量并删除实体; ``add_rule`` 为真时另写剔除规则. 提交由调用方负责."""
     entity = await session.get(spec.entity, facet_id)
     if entity is None:
         return False
-    blocked = await _upsert_block(session, spec.kind, entity.name)
+    blocked = await _upsert_block(session, spec.kind, entity.name) if add_rule else {entity.name}
     await _strip_names_from_scalar_metadata(session, spec.kind, blocked)
     await session.delete(entity)
     return True
@@ -1115,13 +1079,13 @@ async def clean_actor_names(
     别名并入同样跳过别名已锁的演员.
 
     ``rules_by_kind`` 是调用方按本行候选名定向读取的规则, 覆盖原始名、``name(alias)`` 拆出的展示名
-    与别名表映射出的展示名 (见 ``load_rules_for_row``); 省略时按同一口径现查.
+    省略时现读规则表.
     """
     raw_names = normalize_names(meta.actors)
     if not raw_names:
         return
     genders = actor_genders or {}
-    rules = rules_by_kind if rules_by_kind is not None else await load_rules_for_row(session, meta)
+    rules = rules_by_kind if rules_by_kind is not None else await load_all_rules(session)
     actor_rules = rules.get(FacetKind.ACTOR, {})
     seen: set[str] = set()
     canonical: list[str] = []

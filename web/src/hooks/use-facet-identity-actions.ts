@@ -11,7 +11,7 @@ import {
 } from "@/client/@tanstack/react-query.gen";
 import type { FacetKind } from "@/client/types.gen";
 import { extractErrorMessage } from "@/lib/api-error";
-import { confirm } from "@/lib/confirm";
+import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 
 export type FacetNamedTarget = { id: number; name: string };
 
@@ -122,13 +122,25 @@ export function useFacetIdentityActions({
       const message = isUserTag
         ? t("manage.deleteUserTagBody", { name: target.name })
         : t("manage.deleteFacetBody", { name: target.name });
-      const ok = await confirm({
+      if (isUserTag) {
+        const ok = await confirm({
+          title: t("common:actions.delete"),
+          message,
+          confirmLabel: t("common:actions.delete"),
+        });
+        if (!ok) return;
+        deleteMutation.mutate({ path: { kind, facet_id: target.id } });
+        return;
+      }
+      // 用户标签不进规则表, 没有这个选项.
+      const { ok, checked } = await confirmWithCheckbox({
         title: t("common:actions.delete"),
         message,
         confirmLabel: t("common:actions.delete"),
+        checkbox: { label: t("manage.deleteFacetAddRule") },
       });
       if (!ok) return;
-      deleteMutation.mutate({ path: { kind, facet_id: target.id } });
+      deleteMutation.mutate({ path: { kind, facet_id: target.id }, query: { add_rule: checked } });
     },
     [isUserTag, t, deleteMutation, kind],
   );

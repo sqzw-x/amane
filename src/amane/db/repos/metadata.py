@@ -15,7 +15,7 @@ from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
-from ..facet_rules import RuleSet
+from ..facet_rules import RulesByKind
 from ..models import (
     Comment,
     FacetKind,
@@ -48,8 +48,8 @@ from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
+    load_all_rules,
     load_rules_for_names,
-    load_rules_for_row,
     resolve_scalar_facet_names,
     sync_metadata_facets,
 )
@@ -433,10 +433,9 @@ class MetadataRepoMixin(RepositoryMixinBase):
             rows = (await session.exec(stmt)).all()
             return {row_id: content_type for row_id, content_type in rows if row_id is not None}
 
-    async def load_rules_for_names(self, names: Mapping[FacetKind, Sequence[str]]) -> RuleSet:
-        """按候选名定向读取治理数据; 刮削在取值前用它折叠分类字段.
+    async def load_rules_for_names(self, names: Mapping[FacetKind, Sequence[str]]) -> RulesByKind:
+        """按候选名定向读取治理规则; 刮削在取值前用它折叠分类字段.
 
-        规则与别名表的展示名一起返回: 取值期只有拿到后者才能对演员判到与写库期一致的名字.
         只读且只查本次出现的名字, 代价不随规则表规模增长.
         """
         async with self._session() as session:
@@ -477,7 +476,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
-                rules_by_kind = await load_rules_for_row(session, existing)
+                rules_by_kind = await load_all_rules(session)
                 await clean_actor_names(session, existing, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, existing, rules_by_kind)
                 await sync_metadata_facets(session, existing)
@@ -490,7 +489,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
                 session.add(meta)
                 await session.flush()
-                rules_by_kind = await load_rules_for_row(session, meta)
+                rules_by_kind = await load_all_rules(session)
                 await clean_actor_names(session, meta, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
                 await sync_metadata_facets(session, meta)
@@ -570,7 +569,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
-            rules_by_kind = await load_rules_for_row(session, metadata)
+            rules_by_kind = await load_all_rules(session)
             await clean_actor_names(session, metadata, actor_genders, rules_by_kind)
             await apply_facet_rules_to_metadata(session, metadata, rules_by_kind)
             await sync_metadata_facets(session, metadata)

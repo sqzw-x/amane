@@ -16,7 +16,7 @@ from amane.aggregate import (
 from amane.aggregate.engine import _cache_key
 from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
-from amane.db.facet_rules import RuleEntry, RuleSet
+from amane.db.facet_rules import RuleEntry
 from amane.db.models import SCRAPE_FACET_KINDS, FacetKind, FacetRuleAction
 from amane.enums import ActorGender, Language, MetadataField, SiteName
 
@@ -1086,9 +1086,9 @@ def _rules(pairs: dict[tuple[str, str], RuleEntry] | None = None) -> dict[FacetK
     return out
 
 
-def _rule_loader(rules: dict[FacetKind, dict[str, RuleEntry]], actor_display: dict[str, frozenset[str]] | None = None):
+def _rule_loader(rules: dict[FacetKind, dict[str, RuleEntry]]):
     async def load(_names):
-        return RuleSet(rules=rules, actor_display=actor_display or {})
+        return rules
 
     return load
 
@@ -1222,77 +1222,6 @@ class TestFacetRuleFallback:
         assert result.field_sources.get("tags") == expected_source, desc
 
     @pytest.mark.asyncio
-    async def test_actor_list_block_falls_back_when_all_dropped(self) -> None:
-        routes = defaultdict(lambda: [DB, DMM])
-        first = MediaMetadata(number="X-1", title="t", actors=[FilmActor(name="废名", gender=ActorGender.FEMALE)])
-        second = MediaMetadata(number="X-1", title="t", actors=[FilmActor(name="正式", gender=ActorGender.FEMALE)])
-        result = await aggregate(
-            SearchQuery("X-1"),
-            {K1: MockCrawler(first), K2: MockCrawler(second)},
-            routes,
-            load_rules=_rule_loader(_rules({("actor", "废名"): RuleEntry(FacetRuleAction.BLOCK)})),
-        )
-        assert [item.name for item in result.metadata.actors] == ["正式"]
-        assert result.field_sources.get("actors") == K2
-
-    @pytest.mark.asyncio
-    async def test_actor_blocked_by_alias_falls_back_to_next_source(self) -> None:
-        """源站给别名、被剔除的是展示名: 取值期就该判为空并回退, 不能等落库才剔除."""
-        routes = defaultdict(lambda: [DB, DMM])
-        first = MediaMetadata(number="X-6", title="t", actors=[FilmActor(name="みい")])
-        second = MediaMetadata(number="X-6", title="t", actors=[FilmActor(name="正式")])
-        result = await aggregate(
-            SearchQuery("X-6"),
-            {K1: MockCrawler(first), K2: MockCrawler(second)},
-            routes,
-            load_rules=_rule_loader(
-                _rules({("actor", "Mei"): RuleEntry(FacetRuleAction.BLOCK)}), {"みい": frozenset({"Mei"})}
-            ),
-        )
-        assert [item.name for item in result.metadata.actors] == ["正式"]
-        assert result.field_sources.get("actors") == K2
-
-    @pytest.mark.asyncio
-    async def test_actor_alias_kept_when_display_name_not_blocked(self) -> None:
-        """别名映射存在但展示名没被剔除时, 保留原条目与站点顺序."""
-        routes = defaultdict(lambda: [DB, DMM])
-        first = MediaMetadata(number="X-7", title="t", actors=[FilmActor(name="みい", gender=ActorGender.FEMALE)])
-        second = MediaMetadata(number="X-7", title="t", actors=[FilmActor(name="正式")])
-        result = await aggregate(
-            SearchQuery("X-7"),
-            {K1: MockCrawler(first), K2: MockCrawler(second)},
-            routes,
-            load_rules=_rule_loader(_rules(), {"みい": frozenset({"Mei"})}),
-        )
-        assert [item.name for item in result.metadata.actors] == ["みい"]
-        assert result.field_sources.get("actors") == K1
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("desc", "blocked_name", "expected"),
-        [
-            ("任一候选被剔除即剔除", "演员甲", ["正式"]),
-            ("候选都未被剔除则保留", "局外人", ["共享名"]),
-        ],
-        ids=["one_blocked", "none_blocked"],
-    )
-    async def test_actor_alias_ambiguous_uses_all_candidates(
-        self, desc: str, blocked_name: str, expected: list[str]
-    ) -> None:
-        """歧义别名保留全部展示名, 判定与候选的排列顺序无关."""
-        routes = defaultdict(lambda: [DB, DMM])
-        first = MediaMetadata(number="X-8", title="t", actors=[FilmActor(name="共享名")])
-        second = MediaMetadata(number="X-8", title="t", actors=[FilmActor(name="正式")])
-        rules = _rules({("actor", blocked_name): RuleEntry(FacetRuleAction.BLOCK)})
-        result = await aggregate(
-            SearchQuery("X-8"),
-            {K1: MockCrawler(first), K2: MockCrawler(second)},
-            routes,
-            load_rules=_rule_loader(rules, {"共享名": frozenset({"演员甲", "演员乙"})}),
-        )
-        assert [item.name for item in result.metadata.actors] == expected, desc
-
-    @pytest.mark.asyncio
     async def test_actor_gender_fill_does_not_touch_fetched(self) -> None:
         """性别填空只改聚合结果, 站点结果保持原样 (后续站点复用的前提)."""
         routes = defaultdict(lambda: [DB, DMM])
@@ -1312,9 +1241,9 @@ class TestFacetRuleFallback:
         routes = defaultdict(lambda: [DB, DMM])
         calls: list[dict[FacetKind, list[str]]] = []
 
-        async def loader(names) -> RuleSet:
+        async def loader(names):
             calls.append({kind: sorted(found) for kind, found in names.items()})
-            return RuleSet(rules=_rules())
+            return _rules()
 
         await aggregate(
             SearchQuery("X-1"),
@@ -1345,9 +1274,9 @@ class TestFacetRuleFallback:
         routes = defaultdict(lambda: [DB, DMM])
         calls: list[dict[FacetKind, list[str]]] = []
 
-        async def loader(names) -> RuleSet:
+        async def loader(names):
             calls.append({kind: sorted(found) for kind, found in names.items()})
-            return RuleSet(rules=_rules())
+            return _rules()
 
         deferred = MediaMetadata(number="X-2", title="t", tags=["第二段标签"])
         result = await aggregate(
@@ -1375,9 +1304,9 @@ class TestFacetRuleFallback:
         routes[MetadataField.SERIES] = [DMM, DB]
         calls: list[dict[FacetKind, list[str]]] = []
 
-        async def loader(names) -> RuleSet:
+        async def loader(names):
             calls.append({kind: sorted(found) for kind, found in names.items()})
-            return RuleSet(rules=_rules())
+            return _rules()
 
         result = await aggregate(
             SearchQuery("X-4"),

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from amane.crawlers.models import FilmActor, MediaMetadata
+from amane.crawlers.models import MediaMetadata
 from amane.db.facet_rules import (
     FacetFieldValues,
     ResolvedField,
     RuleEntry,
     RuleRow,
-    RuleSet,
     apply_list,
     apply_scalar,
     resolve_field_value,
@@ -180,13 +179,6 @@ class TestResolveFieldValue:
                 ResolvedField(names=[]),
             ),
             (
-                "演员整份剔除 → 空列表",
-                MetadataField.ACTORS,
-                MediaMetadata(number="X", actors=[FilmActor(name="B")]),
-                {FacetKind.ACTOR: BLOCK_B},
-                ResolvedField(actors=[]),
-            ),
-            (
                 "非分类字段原样返回",
                 MetadataField.TITLE,
                 MediaMetadata(number="X", title="T"),
@@ -194,7 +186,7 @@ class TestResolveFieldValue:
                 ResolvedField(value="T"),
             ),
         ],
-        ids=["series_blocked", "series_alias", "tags_partial", "tags_all", "actors_all", "title_passthrough"],
+        ids=["series_blocked", "series_alias", "tags_partial", "tags_all", "title_passthrough"],
     )
     def test_resolve(
         self,
@@ -204,7 +196,7 @@ class TestResolveFieldValue:
         rules: dict[FacetKind, dict[str, RuleEntry]],
         expected: ResolvedField,
     ) -> None:
-        assert resolve_field_value(field, data, RuleSet(rules=rules)) == expected, desc
+        assert resolve_field_value(field, data, rules) == expected, desc
 
     @pytest.mark.parametrize(
         ("desc", "resolved", "expected"),

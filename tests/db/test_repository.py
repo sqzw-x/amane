@@ -11,7 +11,6 @@ from sqlmodel import col, select
 from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
     Actor,
-    ActorAlias,
     FacetKind,
     FacetRule,
     FacetRuleAction,
@@ -773,7 +772,7 @@ class TestMetadataRepo:
         await repo.update_actor(one.id, aliases=["独有名", "共享名"])
         await repo.update_actor(two.id, aliases=["共享名"])
 
-        await repo.delete_facet(FacetKind.ACTOR, one.id)
+        await repo.delete_facet(FacetKind.ACTOR, one.id, add_rule=True)
 
         meta = await repo.upsert_metadata(number="D-2", actors=["独有名", "共享名", "OK"])
         assert meta.actors == ["Two", "OK"]
@@ -1429,7 +1428,7 @@ class TestMetadataRepo:
         await repo.set_metadata_locks(meta.id, [MetadataField.ACTORS])
         actors = await repo.get_actors_by_names(["Blocked"])
         assert actors[0].id is not None
-        await repo.delete_facet(FacetKind.ACTOR, actors[0].id)
+        await repo.delete_facet(FacetKind.ACTOR, actors[0].id, add_rule=True)
 
         # 绕过 delete 的剔除写回被 block 的名字, 归一路径必须仍剔除.
         async with repo._session() as session:
@@ -1746,51 +1745,6 @@ class TestActorLocks:
         assert meta.actors == ["保留"]
 
     @pytest.mark.asyncio(loop_scope="function")
-    async def test_alias_candidate_also_fetches_display_rule(self, repo: Repository):
-        """入参只给别名时, 定向读取仍能查到展示名的规则行 (候选名已并入映射值)."""
-        actor = await self._actor(repo, "Mei")
-        assert actor.id is not None
-        await repo.save_actor(actor, aliases=["みい"])
-        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
-
-        loaded = await repo.load_rules_for_names({FacetKind.ACTOR: ["みい"]})
-
-        assert loaded.rules[FacetKind.ACTOR]["Mei"].action == FacetRuleAction.BLOCK
-        assert "みい" not in loaded.rules[FacetKind.ACTOR]
-
-    @pytest.mark.asyncio(loop_scope="function")
-    @pytest.mark.parametrize("reverse", [False, True], ids=["甲先插入", "乙先插入"])
-    async def test_ambiguous_alias_keeps_all_candidates(self, repo: Repository, reverse: bool) -> None:
-        """歧义别名保留全部展示名: 结论不能取决于 actor_aliases 的返回顺序."""
-        jia = await self._actor(repo, "演员甲")
-        vi = await self._actor(repo, "演员乙")
-        assert jia.id is not None and vi.id is not None
-        rows = [jia.id, vi.id]
-        if reverse:
-            rows.reverse()
-        async with repo._session() as session:
-            for actor_id in rows:
-                session.add(ActorAlias(actor_id=actor_id, name="共享名"))
-            session.add(FacetRule(kind=FacetKind.ACTOR, source_name="演员甲", action=FacetRuleAction.BLOCK))
-            await session.commit()
-
-        loaded = await repo.load_rules_for_names({FacetKind.ACTOR: ["共享名"]})
-
-        assert loaded.actor_display["共享名"] == frozenset({"演员甲", "演员乙"})
-
-    @pytest.mark.asyncio(loop_scope="function")
-    async def test_alias_display_map_reaches_aggregate_fallback(self, repo: Repository):
-        """别名映射随规则一起返回, 取值期据此回退而非等落库才剔除."""
-        actor = await self._actor(repo, "Mei")
-        assert actor.id is not None
-        await repo.save_actor(actor, aliases=["みい"])
-        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
-
-        loaded = await repo.load_rules_for_names({FacetKind.ACTOR: ["みい"]})
-
-        assert loaded.actor_display == {"みい": frozenset({"Mei"})}
-        assert loaded.rules[FacetKind.ACTOR]["Mei"].action == FacetRuleAction.BLOCK
-
     @pytest.mark.asyncio(loop_scope="function")
     async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
         """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
@@ -1860,7 +1814,7 @@ class TestRuleLoadEquivalence:
         async with repo._session() as session:
             full = await load_all_rules(session)
             names = {kind: sorted(rules) for kind, rules in full.items() if rules}
-            targeted = (await load_rules_for_names(session, names)).rules if names else {}
+            targeted = await load_rules_for_names(session, names) if names else {}
         for kind, rules in full.items():
             assert targeted.get(kind, {}) == rules, kind
         # user_tag 不进规则表读取面: 硬删且不写规则, 这里只锁住它不会从 SQL 路径漏出来.
