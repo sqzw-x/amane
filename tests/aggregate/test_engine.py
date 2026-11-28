@@ -16,6 +16,8 @@ from amane.aggregate import (
 from amane.aggregate.engine import _cache_key
 from amane.aggregate.models import AggregatedMetadata
 from amane.crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
+from amane.db.facet_rules import RuleEntry
+from amane.db.models import SCRAPE_FACET_KINDS, FacetKind, FacetRuleAction
 from amane.enums import ActorGender, Language, MetadataField, SiteName
 
 # --- 辅助工具 ---
@@ -1105,3 +1107,273 @@ class TestFetchGraphIntegration:
         assert "dmm" in result.failed_sites
         assert len(c_dmm.fetch_calls) == 1
         assert result.raw
+
+
+# ============================================================
+# 治理规则在取值阶段生效: 被剔除的取值不算命中
+# ============================================================
+
+
+BLOCKED_SERIES = "エクストラビデオ - 他ジャンル系"
+
+
+def _rules(pairs: dict[tuple[str, str], RuleEntry] | None = None) -> dict[FacetKind, dict[str, RuleEntry]]:
+    out: dict[FacetKind, dict[str, RuleEntry]] = {kind: {} for kind in SCRAPE_FACET_KINDS}
+    for (kind, name), entry in (pairs or {}).items():
+        out[FacetKind(kind)][name] = entry
+    return out
+
+
+def _rule_loader(rules: dict[FacetKind, dict[str, RuleEntry]]):
+    async def load(_names):
+        return rules
+
+    return load
+
+
+class TestFacetRuleFallback:
+    """剔除 / 别名规则在取值阶段生效: 被剔除的取值不算命中, 字段沿链继续回退."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("desc", "first_series", "second_series", "rules", "expected_series", "expected_source"),
+        [
+            (
+                "剔除首个来源的值 → 回退到下一个来源",
+                BLOCKED_SERIES,
+                "正しい系列",
+                {("series", BLOCKED_SERIES): RuleEntry(FacetRuleAction.BLOCK)},
+                "正しい系列",
+                K2,
+            ),
+            (
+                "未被剔除时仍取首个来源",
+                BLOCKED_SERIES,
+                "正しい系列",
+                None,
+                BLOCKED_SERIES,
+                K1,
+            ),
+            (
+                "全部来源都被剔除 → 字段为空",
+                BLOCKED_SERIES,
+                BLOCKED_SERIES,
+                {("series", BLOCKED_SERIES): RuleEntry(FacetRuleAction.BLOCK)},
+                None,
+                None,
+            ),
+            (
+                "别名改写后采用改写值",
+                "别名系列",
+                "正しい系列",
+                {("series", "别名系列"): RuleEntry(FacetRuleAction.ALIAS, target_name="正式系列")},
+                "正式系列",
+                K1,
+            ),
+            (
+                "别名目标被剔除 → 视同剔除并回退",
+                "别名系列",
+                "正しい系列",
+                {
+                    ("series", "别名系列"): RuleEntry(FacetRuleAction.ALIAS, target_name="正式系列"),
+                    ("series", "正式系列"): RuleEntry(FacetRuleAction.BLOCK),
+                },
+                "正しい系列",
+                K2,
+            ),
+        ],
+        ids=["block_falls_back", "no_rule_keeps_first", "all_blocked_empty", "alias_applied", "alias_to_blocked"],
+    )
+    async def test_scalar_field_falls_back(
+        self,
+        desc: str,
+        first_series: str | None,
+        second_series: str | None,
+        rules: dict[tuple[str, str], RuleEntry] | None,
+        expected_series: str | None,
+        expected_source: str | None,
+    ) -> None:
+        routes = defaultdict(lambda: [DB, DMM])
+        result = await aggregate(
+            SearchQuery("S2MBD-006"),
+            {
+                K1: MockCrawler(MediaMetadata(number="S2MBD-006", title="t", series=first_series)),
+                K2: MockCrawler(MediaMetadata(number="S2MBD-006", title="t", series=second_series)),
+            },
+            routes,
+            load_rules=_rule_loader(_rules(rules)),
+        )
+        assert result.metadata.series == expected_series, desc
+        assert result.field_sources.get("series") == expected_source, desc
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("desc", "first_tags", "second_tags", "rules", "expected_tags", "expected_source"),
+        [
+            (
+                "整份被剔除 → 回退到下一个来源",
+                ["排除", "排除2"],
+                ["保留"],
+                {("tag", "排除"): RuleEntry(FacetRuleAction.BLOCK), ("tag", "排除2"): RuleEntry(FacetRuleAction.BLOCK)},
+                ["保留"],
+                K2,
+            ),
+            (
+                "部分保留 → 不回退",
+                ["排除", "保留"],
+                ["另一个"],
+                {("tag", "排除"): RuleEntry(FacetRuleAction.BLOCK)},
+                ["保留"],
+                K1,
+            ),
+            (
+                "全部来源整份剔除 → 空列表",
+                ["排除"],
+                ["排除"],
+                {("tag", "排除"): RuleEntry(FacetRuleAction.BLOCK)},
+                [],
+                None,
+            ),
+        ],
+        ids=["all_dropped_falls_back", "partial_kept_no_fallback", "every_source_empty"],
+    )
+    async def test_list_field_falls_back(
+        self,
+        desc: str,
+        first_tags: list[str],
+        second_tags: list[str],
+        rules: dict[tuple[str, str], RuleEntry],
+        expected_tags: list[str],
+        expected_source: str | None,
+    ) -> None:
+        routes = defaultdict(lambda: [DB, DMM])
+        result = await aggregate(
+            SearchQuery("X-1"),
+            {
+                K1: MockCrawler(MediaMetadata(number="X-1", title="t", tags=first_tags)),
+                K2: MockCrawler(MediaMetadata(number="X-1", title="t", tags=second_tags)),
+            },
+            routes,
+            load_rules=_rule_loader(_rules(rules)),
+        )
+        assert result.metadata.tags == expected_tags, desc
+        assert result.field_sources.get("tags") == expected_source, desc
+
+    @pytest.mark.asyncio
+    async def test_actor_gender_fill_does_not_touch_fetched(self) -> None:
+        """性别填空只改聚合结果, 站点结果保持原样 (后续站点复用的前提)."""
+        routes = defaultdict(lambda: [DB, DMM])
+        source = MediaMetadata(number="X-5", title="t", actors=[FilmActor(name="甲", gender=ActorGender.FEMALE)])
+        result = await aggregate(
+            SearchQuery("X-5"),
+            {K1: MockCrawler(source), K2: MockCrawler(None)},
+            routes,
+            load_rules=_rule_loader(_rules()),
+        )
+        assert source.actors[0].gender is ActorGender.FEMALE
+        assert [item.name for item in result.metadata.actors] == ["甲"]
+        assert result.metadata.actors[0] is not source.actors[0]
+
+    @pytest.mark.asyncio
+    async def test_rules_loaded_once_with_candidate_names(self) -> None:
+        routes = defaultdict(lambda: [DB, DMM])
+        calls: list[dict[FacetKind, list[str]]] = []
+
+        async def loader(names):
+            calls.append({kind: sorted(found) for kind, found in names.items()})
+            return _rules()
+
+        await aggregate(
+            SearchQuery("X-1"),
+            {
+                K1: MockCrawler(MediaMetadata(number="X-1", title="t", series="系列A", tags=["标签A"])),
+                K2: MockCrawler(MediaMetadata(number="X-1", title="t", series="系列B", tags=["标签B"])),
+            },
+            routes,
+            load_rules=loader,
+        )
+        assert len(calls) == 1
+        assert calls[0][FacetKind.SERIES] == ["系列A", "系列B"]
+        assert calls[0][FacetKind.TAG] == ["标签A", "标签B"]
+
+    @pytest.mark.asyncio
+    async def test_no_loader_keeps_raw_values(self) -> None:
+        routes = defaultdict(lambda: [DB, DMM])
+        result = await aggregate(
+            SearchQuery("X-1"),
+            {K1: MockCrawler(MediaMetadata(number="X-1", title="t", series=BLOCKED_SERIES)), K2: MockCrawler(None)},
+            routes,
+        )
+        assert result.metadata.series == BLOCKED_SERIES
+
+    @pytest.mark.asyncio
+    async def test_second_phase_only_queries_new_names(self) -> None:
+        """声明 NEEDS_PARTIAL 的来源在第二段: 第一段已定值的名字不重复查."""
+        routes = defaultdict(lambda: [DB, DMM])
+        calls: list[dict[FacetKind, list[str]]] = []
+
+        async def loader(names):
+            calls.append({kind: sorted(found) for kind, found in names.items()})
+            return _rules()
+
+        deferred = MediaMetadata(number="X-2", title="t", tags=["第二段标签"])
+        result = await aggregate(
+            SearchQuery("X-2"),
+            {
+                K1: MockCrawler(MediaMetadata(number="X-2", title="t", series="系列A")),
+                K2: RecordingCrawler(deferred),
+            },
+            routes,
+            load_rules=loader,
+            deferred_sites=frozenset({K2}),
+        )
+        assert len(calls) == 2
+        assert calls[0][FacetKind.SERIES] == ["系列A"]
+        assert FacetKind.TAG not in calls[0]
+        assert calls[1][FacetKind.TAG] == ["第二段标签"]
+        assert result.metadata.series == "系列A"
+        assert result.metadata.tags == ["第二段标签"]
+
+    @pytest.mark.asyncio
+    async def test_second_phase_does_not_requery_unmatched_names(self) -> None:
+        """第一段查过但规则表里没有对应行的名字, 第二段不再重查."""
+        # 系列字段把第二段的站排在链首: 第一段它尚未执行, 字段因此不定值, 名字进入第一段查询.
+        routes: defaultdict[MetadataField, list[SiteName]] = defaultdict(lambda: [DB, DMM])
+        routes[MetadataField.SERIES] = [DMM, DB]
+        calls: list[dict[FacetKind, list[str]]] = []
+
+        async def loader(names):
+            calls.append({kind: sorted(found) for kind, found in names.items()})
+            return _rules()
+
+        result = await aggregate(
+            SearchQuery("X-4"),
+            {
+                K1: MockCrawler(MediaMetadata(number="X-4", title="t", series="系列A")),
+                K2: RecordingCrawler(MediaMetadata(number="X-4", title="t", series="系列B")),
+            },
+            routes,
+            load_rules=loader,
+            deferred_sites=frozenset({K2}),
+        )
+        assert calls[0][FacetKind.SERIES] == ["系列A"]
+        # 系列A 查过且无规则行, 第二段只补新增的系列B.
+        assert calls[1][FacetKind.SERIES] == ["系列B"]
+        assert result.metadata.series == "系列B"
+        assert result.field_sources.get("series") == K2
+
+    @pytest.mark.asyncio
+    async def test_loader_failure_falls_back_to_raw_values(self) -> None:
+        """规则读取失败时按未收敛取值继续, 不中断刮削."""
+        routes = defaultdict(lambda: [DB, DMM])
+
+        async def loader(_names):
+            return None
+
+        result = await aggregate(
+            SearchQuery("X-3"),
+            {K1: MockCrawler(MediaMetadata(number="X-3", title="t", series=BLOCKED_SERIES))},
+            routes,
+            load_rules=loader,
+        )
+        assert result.metadata.series == BLOCKED_SERIES

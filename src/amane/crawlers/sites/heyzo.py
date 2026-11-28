@@ -9,7 +9,8 @@
 不能依赖 http 客户端默认值 (curl 默认的 `*/*` 与完全不带该头的效果不同, 后者会被判成非浏览器).
 
 页面没有 JSON-LD 与稳定的 data 属性: 标题 / 简介 / 封面 / 预告片取 `og:` 元标签,
-出演与配信日 / 配信期間、标签靠「标签文字 + 相邻兄弟节点」定位, 不锚定带哈希的 CSS-module 类名.
+出演与配信日 / 配信期間、系列、标签靠「标签文字 + 相邻兄弟节点」定位, 不锚定带哈希的 CSS-module 类名.
+系列栏只在有系列的条目上出现, 整栏不存在时该字段为空, 不由番号或标题推断.
 新条目把「配信日」换成「配信期間」(区间), 这类条目 release 取区间起点; 区间形态不参与
 「配信日」的取值, 两者是互斥的标签.
 
@@ -104,6 +105,7 @@ def to_metadata(text: str, url: str) -> MediaMetadata | None:
         title=_strip_suffix(title),
         actors=film_actors(_actors(html)),
         studio=_STUDIO,
+        series=_series(html),
         release=_release(html),
         # 页内没有时长字段.
         runtime=None,
@@ -120,6 +122,8 @@ def to_metadata(text: str, url: str) -> MediaMetadata | None:
 _ACTORS = '//span[normalize-space()="出演"]/following-sibling::span//a/text()'
 _DATE_LABELS = ("配信日", "配信期間")
 _TAG_LINKS = '//span[normalize-space()="タグ"]/following-sibling::div//a/text()'
+# 系列栏只在有系列的条目上出现, 值直接是链接文字 (无站点锚定的类名可依).
+_SERIES = '//span[normalize-space()="シリーズ"]/following-sibling::a/text()'
 
 
 def _og(text: str, prop: str) -> str:
@@ -150,6 +154,11 @@ def _number_from_url(url: str) -> str:
 
 def _actors(html: Selector) -> list[str]:
     return [name for name in extract_all_texts(html, _ACTORS) if name]
+
+
+def _series(html: Selector) -> str | None:
+    """系列栏: 条目没有系列时整栏不存在, 取不到即空, 不由番号或标题推断."""
+    return extract_text(html, _SERIES) or None
 
 
 def _gallery_urls(text: str, cover: str) -> list[str]:

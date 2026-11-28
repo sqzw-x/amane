@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Unpack, cast
 
@@ -6,6 +6,7 @@ import structlog
 from sqlalchemy import ColumnElement, distinct, or_, text, update
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.functions import count
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -14,8 +15,10 @@ from ...enums import ActorGender, MetadataField
 from ...parsing import ContentType, Mosaic, infer_content_type
 from ...utils.collections import unique_ids
 from ...utils.text import normalize_long_text
+from ..facet_rules import RulesByKind
 from ..models import (
     Comment,
+    FacetKind,
     MediaFile,
     Metadata,
     MetadataActor,
@@ -45,7 +48,8 @@ from .facet_helpers import (
     apply_facet_rules_to_metadata,
     cascade_delete_metadata,
     clean_actor_names,
-    load_rules_by_kind,
+    load_all_rules,
+    load_rules_for_names,
     resolve_scalar_facet_names,
     sync_metadata_facets,
 )
@@ -64,9 +68,33 @@ def _normalize_text_fields(fields: MetadataFields) -> MetadataFields:
     return {**fields, "plot": normalize_long_text(plot)}
 
 
-def _image_signature(metadata: Metadata) -> tuple[list[str], list[str], dict[str, list[str]]]:
-    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入)."""
-    return (metadata.poster_urls, metadata.thumb_urls, metadata.extrafanart_urls)
+def _image_signature(
+    metadata: Metadata,
+) -> tuple[list[str], list[str], list[tuple[str, list[str]]]]:
+    """封面与剧照的来源字段; 变化即向量失效 (缩略图作为封面回退, 一并纳入).
+
+    剧照按站点分组且首站即取值, 语义索引只取第一个有落盘图片的站点
+    (见 ``semantic/service.py::_resolve_images``), 因此键序参与真值, 比较不能交给 dict 的 ``==``.
+    """
+    return (metadata.poster_urls, metadata.thumb_urls, list(metadata.extrafanart_urls.items()))
+
+
+def _flag_ordered(instance: Metadata, keys: Iterable[str]) -> None:
+    """让顺序敏感列的键序变化触发 UPDATE.
+
+    SQLAlchemy 判列是否变化用 ``==``, 而 dict 相等不看顺序; 首项即取值的列 (``_ORDERED_MAPPING_COLUMNS``)
+    因此必须显式标脏, 否则改了字段优先级重新刮削仍读到旧的首站.
+    """
+    for key in keys:
+        if key in _ORDERED_MAPPING_COLUMNS:
+            flag_modified(instance, key)
+
+
+def _write_columns(instance: Metadata, fields: MetadataFields) -> None:
+    """逐列写入, 再按 ``_ORDERED_MAPPING_COLUMNS`` 标脏."""
+    for key, value in fields.items():
+        setattr(instance, key, value)
+    _flag_ordered(instance, fields)
 
 
 def _merge_raw_snapshots(
@@ -122,6 +150,9 @@ _LOCK_FIELD_COLUMN: dict[MetadataField, str] = {
     MetadataField.SCORE: "scores",
 }
 _LOCK_COLUMN_FIELD: dict[str, MetadataField] = {column: field for field, column in _LOCK_FIELD_COLUMN.items()}
+
+#: 首项即取值、因此顺序参与真值的映射列. 写入这两列时, 仅键序变化也要落库.
+_ORDERED_MAPPING_COLUMNS: frozenset[str] = frozenset({"extrafanart_urls", "scores"})
 
 
 def _locked_fields_of(meta: Metadata) -> set[MetadataField]:
@@ -402,6 +433,14 @@ class MetadataRepoMixin(RepositoryMixinBase):
             rows = (await session.exec(stmt)).all()
             return {row_id: content_type for row_id, content_type in rows if row_id is not None}
 
+    async def load_rules_for_names(self, names: Mapping[FacetKind, Sequence[str]]) -> RulesByKind:
+        """按候选名定向读取治理规则; 刮削在取值前用它折叠分类字段.
+
+        只读且只查本次出现的名字, 代价不随规则表规模增长.
+        """
+        async with self._session() as session:
+            return await load_rules_for_names(session, names)
+
     async def upsert_metadata(
         self,
         number: str,
@@ -424,7 +463,6 @@ class MetadataRepoMixin(RepositoryMixinBase):
             # pysqlite 只在 DML 之前发出 BEGIN, 查号落在事务之外时并发同号写入会双双判定为「无行」,
             # 后者在插入时违反 ix_metadata_number. 手工取得写锁后判定与写入同处一个事务.
             await acquire_write_lock(session)
-            rules_by_kind = await load_rules_by_kind(session)
             stmt = select(Metadata).where(metadata_number_predicate(number))
             result = await session.exec(stmt)
             existing = result.first()
@@ -434,11 +472,11 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 incoming_raw = fields.get("raw")
                 if merge_raw and incoming_raw is not None:
                     fields["raw"] = {**(existing.raw or {}), **incoming_raw}
-                for key, value in fields.items():
-                    setattr(existing, key, value)
+                _write_columns(existing, fields)
                 existing.updated_at = _utcnow()
                 session.add(existing)
                 await session.flush()
+                rules_by_kind = await load_all_rules(session)
                 await clean_actor_names(session, existing, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, existing, rules_by_kind)
                 await sync_metadata_facets(session, existing)
@@ -451,6 +489,7 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 meta = Metadata(number=number, content_type=content_type or infer_content_type(number), **fields)
                 session.add(meta)
                 await session.flush()
+                rules_by_kind = await load_all_rules(session)
                 await clean_actor_names(session, meta, actor_genders, rules_by_kind)
                 await apply_facet_rules_to_metadata(session, meta, rules_by_kind)
                 await sync_metadata_facets(session, meta)
@@ -478,7 +517,6 @@ class MetadataRepoMixin(RepositoryMixinBase):
         async with self._session() as session:
             # 读改写须同事务: 锁定集合合并、投影重建都依据本次读到的值, 见 docs/dev/database.md.
             await acquire_write_lock(session)
-            rules_by_kind = await load_rules_by_kind(session)
             metadata = await session.get(Metadata, metadata_id)
             if metadata is None:
                 return None
@@ -527,9 +565,11 @@ class MetadataRepoMixin(RepositoryMixinBase):
                 metadata.field_sources = updates["field_sources"]
             if "raw" in updates:
                 metadata.raw = updates["raw"]
+            _flag_ordered(metadata, updates)
             metadata.updated_at = _utcnow()
             session.add(metadata)
             await session.flush()
+            rules_by_kind = await load_all_rules(session)
             await clean_actor_names(session, metadata, actor_genders, rules_by_kind)
             await apply_facet_rules_to_metadata(session, metadata, rules_by_kind)
             await sync_metadata_facets(session, metadata)

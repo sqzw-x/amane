@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Amane API",
-    "version": "0.29.0"
+    "version": "0.30.0"
   },
   "paths": {
     "/api/health": {
@@ -3887,7 +3887,7 @@
           "facets"
         ],
         "summary": "Delete Facet",
-        "description": "删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删.",
+        "description": "删除分类并从 Metadata 真值移除该名字.\n\n``add_rule`` 为真时另写剔除规则, 名字不会在下次刮削时复活; 否则只删实体, 由用户显式选择.\nuser_tag 硬删, 不进规则表.",
         "operationId": "delete_facet",
         "parameters": [
           {
@@ -3905,6 +3905,16 @@
             "schema": {
               "type": "integer",
               "title": "Facet Id"
+            }
+          },
+          {
+            "name": "add_rule",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Add Rule"
             }
           }
         ],
@@ -7655,6 +7665,20 @@
             "title": "Rate Limit",
             "default": 2.0
           },
+          "retry_initial_s": {
+            "type": "number",
+            "maximum": 60.0,
+            "minimum": 0.1,
+            "title": "Retry Initial S",
+            "default": 1.0
+          },
+          "retry_max_s": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Retry Max S",
+            "default": 60.0
+          },
           "sql_timeout_ms": {
             "type": "integer",
             "maximum": 60000.0,
@@ -7889,6 +7913,9 @@
                   "$ref": "#/components/schemas/ApprovalsRow"
                 },
                 {
+                  "$ref": "#/components/schemas/RetriedRow"
+                },
+                {
                   "$ref": "#/components/schemas/ErrorRow"
                 },
                 {
@@ -7903,6 +7930,7 @@
                   "error": "#/components/schemas/ErrorRow",
                   "reasoning_delta": "#/components/schemas/ReasoningDeltaRow",
                   "request_usage": "#/components/schemas/RequestUsageRow",
+                  "retried": "#/components/schemas/RetriedRow",
                   "text_delta": "#/components/schemas/TextDeltaRow",
                   "tool_call": "#/components/schemas/ToolCallRow",
                   "tool_result": "#/components/schemas/ToolResultRow",
@@ -10367,6 +10395,8 @@
               "model": "gpt-4o-mini",
               "max_tokens": 128000,
               "rate_limit": 2.0,
+              "retry_initial_s": 1.0,
+              "retry_max_s": 60.0,
               "sql_timeout_ms": 5000,
               "result_cache_ttl_s": 3600,
               "result_cache_max_entries": 64,
@@ -14408,6 +14438,52 @@
         "title": "RescrapeTarget",
         "description": "滚动补刮选取的实体种类. 每个已选项各自选取 limit 条."
       },
+      "RetriedRow": {
+        "properties": {
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seq"
+          },
+          "at": {
+            "type": "string",
+            "title": "At"
+          },
+          "type": {
+            "type": "string",
+            "const": "retried",
+            "title": "Type"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt"
+          },
+          "delay_ms": {
+            "type": "integer",
+            "title": "Delay Ms"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "attempt",
+          "delay_ms",
+          "reason"
+        ],
+        "title": "RetriedRow",
+        "description": "一次失败请求的重试记录; 成功的那次不留行.\n\n重试可能持续很久, 既不加行也不报错时页面只有转圈, 分不清是卡住还是在等."
+      },
       "RoutineType": {
         "type": "string",
         "enum": [
@@ -17493,6 +17569,17 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
           }
         },
         "additionalProperties": false,

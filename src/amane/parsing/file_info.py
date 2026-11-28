@@ -741,11 +741,12 @@ def _detect_subtitle(basename: str) -> bool:
 
 
 def _detect_mosaic(basename: str) -> Mosaic | None:
-    """basename 已大写. `CRACKED` / `-U` / `-UC` / `-LTX` 是破解; 多标记优先级见 docs/dev/data-model.md."""
+    """basename 已大写. 多标记优先级见 docs/dev/data-model.md."""
     if (
         re.search(r"破解|克破|CRACKED", basename)
         or re.search(r"-U(C)?(?![A-Z0-9])", basename)
         or re.search(r"-LTX(?![A-Z0-9])", basename)
+        or re.search(r"(?<![A-Z0-9])RESTORED(?![A-Z0-9])", basename)
     ):
         return Mosaic.CRACKED
     if re.search(r"流出|LEAKED", basename):

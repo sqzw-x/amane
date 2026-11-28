@@ -12,6 +12,7 @@ from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
     Actor,
     FacetKind,
+    FacetRule,
     FacetRuleAction,
     MediaFile,
     MediaFileStatus,
@@ -35,6 +36,7 @@ from amane.db.repo_types import (
     MetadataFields,
     WriteMode,
 )
+from amane.db.repos.facet_helpers import load_all_rules, load_rules_for_names
 from amane.db.repos.metadata import _merge_raw_snapshots
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
@@ -437,6 +439,133 @@ class TestMediaFileRepo:
         count = await repo.count_media_files(status=status_filter, search=search)
         assert count == expected_count
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_absorbs_occupant(self, repo: Repository):
+        """目标已被另一行占用时交回那一行, 不写本行也不撞 path 的 UNIQUE."""
+        first = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        second = await repo.create_media_file(library_id=1, path="/video/B.mp4", number="B")
+        assert first.id is not None and second.id is not None
+
+        write = await repo.update_media_file_path(second.id, "/video/A.mp4")
+
+        assert write.updated is None
+        assert write.occupant is not None and write.occupant.id == first.id
+        kept = await repo.get_media_file(second.id)
+        assert kept is not None and kept.path == "/video/B.mp4"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_to_own_path_rewrites(self, repo: Repository):
+        """目标就是本行当前路径时照写: 占用判定不能把本行当成障碍."""
+        media = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        assert media.id is not None
+
+        write = await repo.update_media_file_path(media.id, "/video/A.mp4")
+
+        assert write.occupant is None
+        assert write.updated is not None and write.updated.path == "/video/A.mp4"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_path_after_row_deleted(self, repo: Repository):
+        """本行已被删除时不重建记录: 写回拿到的是不存在的行."""
+        media = await repo.create_media_file(library_id=1, path="/video/A.mp4", number="A")
+        assert media.id is not None
+        assert await repo.delete_media_file(media.id)
+
+        write = await repo.update_media_file_path(media.id, "/video/B.mp4")
+
+        assert write.updated is None
+        assert write.occupant is None
+        assert await repo.get_media_file(media.id) is None
+
+
+class _RecordingMediaHook:
+    """记录条目图片变化通知; 用来断言「没有变化」不触发向量重建."""
+
+    def __init__(self) -> None:
+        self.changed: list[int] = []
+
+    async def metadata_changed(self, metadata_id: int) -> None:
+        self.changed.append(metadata_id)
+
+
+class TestOrderedMappingColumns:
+    """站点分组列的首项即取值: 键序变化必须落库, 否则改了字段优先级重刮也读不到新顺序."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("first", "second", "expected_url"),
+        [
+            ({"dmm": ["d/1"]}, {"official": ["o/1"]}, "o/1"),
+            ({"dmm": ["d/1"], "official": ["o/1"]}, {"official": ["o/1"], "dmm": ["d/1"]}, "o/1"),
+            ({"dmm": ["d/1"]}, {"official": ["o/1"], "dmm": ["d/1"]}, "o/1"),
+        ],
+        ids=["replace_only_site", "reorder_existing_sites", "prepend_new_site"],
+    )
+    async def test_upsert_persists_key_order(self, repo: Repository, first: dict, second: dict, expected_url: str):
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls=first)
+        assert entry.id is not None
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls=second)
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert list(reloaded.extrafanart_urls) == list(second)
+        assert reloaded.extrafanart == [expected_url]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_persists_key_order(self, repo: Repository):
+        """PATCH / merge 走的是同一个列, 界面改首站同样要落库."""
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"dmm": ["d/1"], "official": ["o/1"]})
+        assert entry.id is not None
+
+        await repo.update_metadata(
+            entry.id, mode=WriteMode.MANUAL, extrafanart_urls={"official": ["o/1"], "dmm": ["d/1"]}
+        )
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert list(reloaded.extrafanart_urls) == ["official", "dmm"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_scores_reorder_moves_the_displayed_score(self, repo: Repository):
+        """评分同为首项即取值, 站点顺序换了单值 score 要跟着换."""
+        entry = await repo.upsert_metadata(number="IPZZ-003", scores={"dmm": 4.5, "official": 80.0})
+        assert entry.id is not None
+        assert entry.score == 4.5
+
+        await repo.upsert_metadata(number="IPZZ-003", scores={"official": 80.0, "dmm": 4.5})
+
+        reloaded = await repo.get_metadata(entry.id)
+        assert reloaded is not None
+        assert reloaded.score == 80.0
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_key_order_change_triggers_media_hook(self, repo: Repository):
+        """键序参与真值: 语义索引只取第一个有落盘图片的站点, 换首站必须重算向量."""
+        hook = _RecordingMediaHook()
+        repo.set_media_hook(hook)
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"dmm": ["d/1"], "official": ["o/1"]})
+        assert entry.id is not None
+        # 插入本身就该通知一次, 清掉后才看得出「只有顺序变了」是否触发.
+        hook.changed.clear()
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"], "dmm": ["d/1"]})
+
+        assert hook.changed == [entry.id]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_same_order_does_not_trigger_media_hook(self, repo: Repository):
+        """顺序没变时图片签名不变, 不得把每次刮削都变成一次语义索引重建."""
+        hook = _RecordingMediaHook()
+        repo.set_media_hook(hook)
+        entry = await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"]})
+        assert entry.id is not None
+        hook.changed.clear()
+
+        await repo.upsert_metadata(number="IPZZ-003", extrafanart_urls={"official": ["o/1"]})
+
+        assert hook.changed == []
+
 
 class TestMetadataRepo:
     @pytest.mark.asyncio(loop_scope="function")
@@ -643,7 +772,7 @@ class TestMetadataRepo:
         await repo.update_actor(one.id, aliases=["独有名", "共享名"])
         await repo.update_actor(two.id, aliases=["共享名"])
 
-        await repo.delete_facet(FacetKind.ACTOR, one.id)
+        await repo.delete_facet(FacetKind.ACTOR, one.id, add_rule=True)
 
         meta = await repo.upsert_metadata(number="D-2", actors=["独有名", "共享名", "OK"])
         assert meta.actors == ["Two", "OK"]
@@ -1299,7 +1428,7 @@ class TestMetadataRepo:
         await repo.set_metadata_locks(meta.id, [MetadataField.ACTORS])
         actors = await repo.get_actors_by_names(["Blocked"])
         assert actors[0].id is not None
-        await repo.delete_facet(FacetKind.ACTOR, actors[0].id)
+        await repo.delete_facet(FacetKind.ACTOR, actors[0].id, add_rule=True)
 
         # 绕过 delete 的剔除写回被 block 的名字, 归一路径必须仍剔除.
         async with repo._session() as session:
@@ -1560,6 +1689,76 @@ class TestActorLocks:
 
         assert await repo.get_actor_aliases(actor.id) == ["手填"]
 
+    @staticmethod
+    async def _rule(repo: Repository, kind: FacetKind, source: str, action: FacetRuleAction, target: str | None = None):
+        async with repo._session() as session:
+            session.add(FacetRule(kind=kind, source_name=source, action=action, target_name=target))
+            await session.commit()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_block_rule(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-1", series="被剔除")
+
+        assert meta.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_alias_and_blocked_target(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "别名", FacetRuleAction.ALIAS, "正式")
+        aliased = await repo.upsert_metadata(number="TGT-2", series="别名")
+        assert aliased.series == "正式"
+
+        await self._rule(repo, FacetKind.SERIES, "正式", FacetRuleAction.BLOCK)
+        blocked = await repo.upsert_metadata(number="TGT-3", series="别名")
+        assert blocked.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_split_alias_is_blocked(self, repo: Repository):
+        """候选名覆盖 name(alias) 拆出的展示名, 否则清洗阶段的 block 会漏查."""
+        await self._rule(repo, FacetKind.ACTOR, "废名", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-4", actors=["废名(别名)"])
+
+        assert meta.actors == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_metadata_applies_block_rule(self, repo: Repository):
+        meta = await repo.upsert_metadata(number="TGT-5", series="保留")
+        assert meta.id is not None
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        updated = await repo.update_metadata(meta.id, series="被剔除")
+
+        assert updated is not None and updated.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_and_parentheses_name_is_blocked(self, repo: Repository):
+        """括号拆名与别名行是两条索引路径, 交叉时同样判到展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-8", actors=["みい(别名甲)", "保留"])
+
+        assert meta.actors == ["保留"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
+        """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        via_alias = await repo.upsert_metadata(number="TGT-6", actors=["みい"])
+        assert via_alias.actors == []
+
+        kept = await repo.upsert_metadata(number="TGT-7", actors=["みい", "别人"])
+        assert kept.actors == ["别人"]
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_save_actor_skips_locked_aliases(self, repo: Repository):
         actor = await self._actor(repo, "SaveFrozen")
@@ -1583,6 +1782,44 @@ class TestActorLocks:
         assert set(ActorField) == (set(Actor.model_fields) - identity - non_person) | {ActorField.ALIASES}
         assert set(ActorField) == set(get_type_hints(ActorPersonFields)) - non_person
         assert set(ActorField) == set(AggregatedActor.model_fields) - non_person
+
+
+class TestRuleLoadEquivalence:
+    """全表读取与定向读取须给出同一份规则, 否则两条路径的折叠结果不一致."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rows",
+        [
+            [
+                ("series", "A", FacetRuleAction.ALIAS, "B"),
+                ("series", "B", FacetRuleAction.BLOCK, None),
+                ("tag", "T", FacetRuleAction.BLOCK, None),
+                ("actor", "演员", FacetRuleAction.BLOCK, None),
+                ("user_tag", "用户标签", FacetRuleAction.BLOCK, None),
+            ],
+            [("studio", "S", FacetRuleAction.ALIAS, "S2")],
+            [],
+        ],
+        ids=["alias_to_blocked", "alias_only", "empty"],
+    )
+    async def test_same_entries(
+        self, repo: Repository, rows: list[tuple[str, str, FacetRuleAction, str | None]]
+    ) -> None:
+        async with repo._session() as session:
+            for kind, source, action, target in rows:
+                session.add(FacetRule(kind=FacetKind(kind), source_name=source, action=action, target_name=target))
+            await session.commit()
+
+        async with repo._session() as session:
+            full = await load_all_rules(session)
+            names = {kind: sorted(rules) for kind, rules in full.items() if rules}
+            targeted = await load_rules_for_names(session, names) if names else {}
+        for kind, rules in full.items():
+            assert targeted.get(kind, {}) == rules, kind
+        # user_tag 不进规则表读取面: 硬删且不写规则, 这里只锁住它不会从 SQL 路径漏出来.
+        assert FacetKind.USER_TAG not in full
+        assert FacetKind.USER_TAG not in targeted
 
 
 class TestTaskRepo:

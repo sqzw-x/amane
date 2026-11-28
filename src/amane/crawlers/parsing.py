@@ -143,6 +143,11 @@ def _split_leading_digits(number: str) -> tuple[str, str]:
     return (match.group(), folded[match.end() :]) if match else ("", folded)
 
 
+def without_leading_digits(number: str) -> str:
+    """折叠后去掉开头的数字段; 没有数字段时即整串折叠. 供按尾号聚合站内写法不同的同一番号."""
+    return _split_leading_digits(number)[1]
+
+
 def _number_structure(number: str) -> tuple[str, ...]:
     """番号的结构: 按短横线切段并折叠各段, 首段再剥掉开头的数字段.
 

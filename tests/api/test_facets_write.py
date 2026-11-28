@@ -70,7 +70,7 @@ async def test_facet_http_actor_rename_merge_delete(client: AsyncClient, repo: R
     doomed = next(
         i["id"] for i in (await client.get("facets/actor?search=Carol")).json()["items"] if i["name"] == "Carol"
     )
-    assert (await client.delete(f"facets/actor/{doomed}")).status_code == 204
+    assert (await client.delete(f"facets/actor/{doomed}", params={"add_rule": "true"})).status_code == 204
     rules = (await client.get("facets/actor/rules")).json()["items"]
     assert any(r["source_name"] == "Carol" and r["action"] == "block" for r in rules)
     rule = next(r for r in rules if r["source_name"] == "Carol")

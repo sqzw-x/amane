@@ -139,6 +139,8 @@ async def test_user_config_takes_priority(crawler):
     ("number", "expected_domain"),
     [
         ("SSIS-001", "s1s1s1.com"),  # S1
+        ("SONE-001", "s1s1s1.com"),  # S1 (SONE 系列)
+        ("SNOS-001", "s1s1s1.com"),  # S1 (SNOS 系列)
         ("MIDV-001", "moodyz.com"),  # MOODYZ
         ("JUL-001", "www.madonna-av.com"),  # Madonna
         ("IPX-001", "ideapocket.com"),  # IdeaPocket

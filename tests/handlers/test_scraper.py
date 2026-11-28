@@ -10,11 +10,12 @@ from pydantic import ValidationError
 
 from amane.aggregate import AggregatedMetadata
 from amane.config import HotSettings, ScrapingConfig
-from amane.crawlers.models import MediaMetadata
+from amane.crawlers.models import FetchOptions, MediaMetadata, SearchQuery
 from amane.db.models import MediaFileStatus, Task, TaskStatus, TaskType
 from amane.enums import MetadataField, SiteName
 from amane.handlers import CacheKind, RefreshHandler, RefreshPayload, ScanMode, ScrapeHandler, ScrapePayload
 from amane.library import CleanupInventory, InventorySource, InventoryStore, LibraryFileKind, LibraryHit, scan_inventory
+from amane.net.errors import FailureKind, RequestError, RequestFailure
 from amane.observability import Recorder
 from amane.parsing import ContentType
 from amane.plugins.models import SourceDescriptor
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from amane.db.repository import Repository
+    from amane.media import ResourceStore
 
 # --- 辅助类 ---
 
@@ -1166,3 +1168,98 @@ def test_previous_homepages_tolerates_bad_shape() -> None:
     assert _previous_homepages(None) == []
     assert _previous_homepages(_FakeDbData("not a dict")) == []
     assert _previous_homepages(_FakeDbData({"official_ai": 123})) == []
+
+
+class _StillsCrawler:
+    """按站点给出固定剧照; ``error`` 非空时该站以该失败上报."""
+
+    def __init__(self, extrafanart: list[str], error: RequestError | None = None) -> None:
+        self._extrafanart = extrafanart
+        self._error = error
+
+    async def fetch(self, query: SearchQuery, options: FetchOptions | None = None) -> MediaMetadata | None:
+        if self._error is not None:
+            raise self._error
+        return MediaMetadata(number=query.number, title="t", extrafanart=self._extrafanart)
+
+
+def _stills(site: str) -> list[str]:
+    return [f"https://{site}.example/still.jpg"]
+
+
+def _blocked(site: str) -> RequestError:
+    failure = RequestFailure(kind=FailureKind.HTTP_STATUS, status=403, message="HTTP 403")
+    return RequestError(f"https://{site}.example", failure)
+
+
+def _stills_handler(
+    site_order: list[SiteName], crawlers: dict[str, _StillsCrawler], *, repo: Repository, resource_store: ResourceStore
+) -> ScrapeHandler:
+    config = _config_with(
+        {ContentType.CENSORED: [SiteName.DMM, SiteName.OFFICIAL, SiteName.JAVDB, SiteName.JAVBUS]},
+        {MetadataField.EXTRAFANART: site_order},
+    )
+    return ScrapeHandler(
+        repo=repo, factory=RecordingFactory(crawlers), resource_store=resource_store, pipeline_config=config
+    )
+
+
+class TestStillsPriorityOnRescrape:
+    """改了剧照字段优先级后重新刮削即按新顺序重算, 与是否命中站点快照、是否另有站失败无关."""
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.parametrize(
+        ("use_cache", "failing"),
+        [
+            (None, None),
+            (None, SiteName.DMM),
+            (set(), None),
+            (set(), SiteName.DMM),
+            ({CacheKind.trans}, SiteName.DMM),
+        ],
+        ids=[
+            "cached_no_failure",
+            "cached_dmm_blocked",
+            "forced_no_failure",
+            "forced_dmm_blocked",
+            "trans_only_cache_dmm_blocked",
+        ],
+    )
+    async def test_first_still_follows_current_priority(
+        self, repo: Repository, resource_store, use_cache: set[CacheKind] | None, failing: SiteName | None
+    ):
+        crawlers = {"dmm": _StillsCrawler(_stills("dmm")), "official": _StillsCrawler(_stills("official"))}
+        await _stills_handler([SiteName.DMM], crawlers, repo=repo, resource_store=resource_store).handle(
+            ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
+        )
+
+        entry = await repo.get_metadata_by_number("IPZZ-003")
+        assert entry is not None
+        assert entry.extrafanart == _stills("dmm")
+
+        if failing is not None:
+            crawlers[str(failing)] = _StillsCrawler([], _blocked(str(failing)))
+        payload = ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
+        if use_cache is not None:
+            payload.use_cache = use_cache
+        await _stills_handler([SiteName.OFFICIAL], crawlers, repo=repo, resource_store=resource_store).handle(payload)
+
+        reloaded = await repo.get_metadata_by_number("IPZZ-003")
+        assert reloaded is not None
+        assert reloaded.extrafanart == _stills("official")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_priority_without_new_data_keeps_previous_site(self, repo: Repository, resource_store):
+        """新首站在本次刮削没有剧照时不能凭空清空: 聚合只收有值的站点, 旧站排到次位."""
+        crawlers = {"dmm": _StillsCrawler(_stills("dmm")), "official": _StillsCrawler([])}
+        await _stills_handler([SiteName.DMM], crawlers, repo=repo, resource_store=resource_store).handle(
+            ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
+        )
+        await _stills_handler([SiteName.OFFICIAL], crawlers, repo=repo, resource_store=resource_store).handle(
+            ScrapePayload(number="IPZZ-003", content_type=ContentType.CENSORED)
+        )
+
+        reloaded = await repo.get_metadata_by_number("IPZZ-003")
+        assert reloaded is not None
+        assert list(reloaded.extrafanart_urls) == ["dmm"]
+        assert reloaded.extrafanart == _stills("dmm")

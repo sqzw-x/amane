@@ -5,9 +5,17 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 
+from amane.db.models import Resource
 from amane.media import ResourceStore, UpscaleOutcome, derived_locator
-from amane.media.resource_store import RESOURCE_URL_PREFIX, _is_placeholder_url, internal_url_hash
+from amane.media.resource_store import (
+    EXTRAFANART_CONCURRENCY,
+    RESOURCE_URL_PREFIX,
+    _is_placeholder_url,
+    internal_url_hash,
+    unscaled_size,
+)
 from amane.net.egress import EgressPolicy
 from amane.net.http import RateLimiters, WebClient
 
@@ -571,6 +579,105 @@ class TestPlaceholderRedirect:
         record = await resource_store.get_by_url(_REQUEST)
         assert record is not None
         assert record.size == resource_store.full_path(record).stat().st_size
+
+
+class TestUnscaledSize:
+    """判裁切取的尺寸: 盘上那份是超分后的字节, 按记录的倍率除回超分前."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("meta", "image", "expect"),
+        [
+            ({"sr": {"scale": 2}}, (200, 120), (100, 60)),  # 正常整除
+            ({"sr": {"scale": 4}}, (1252, 1908), (313, 477)),  # 奇数尺寸也精确除回
+            ({"sr": {"model": None, "scale": 2}}, (200, 120), (100, 60)),  # 旧格式 model:null 仍有 scale
+            ({"sr": {"scale": 0}}, (200, 120), (200, 120)),  # 倍率非正: 退回盘上
+            ({"sr": {"scale": -2}}, (200, 120), (200, 120)),  # 负倍率同样退回
+            ({"sr": {"tool": "waifu2x"}}, (200, 120), (200, 120)),  # 缺倍率: 退回盘上
+            ({"sr": "garbage"}, (200, 120), (200, 120)),  # 存量脏值: sr 非 dict, 按未记处理
+            ({}, (200, 120), (200, 120)),  # 从未超分
+            ({"sr": {"scale": 500}}, (200, 120), (200, 120)),  # 除回得 0: 数据脏, 退回盘上
+        ],
+    )
+    async def test_divides_by_scale_then_falls_back_to_disk(
+        self,
+        tmp_path: Path,
+        meta: dict[str, Any],
+        image: tuple[int, int],
+        expect: tuple[int, int],
+    ) -> None:
+        src = tmp_path / "resources" / "img.jpg"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", image, "blue").save(src)
+        record = Resource(url="https://s/i.jpg", file_path="img.jpg", meta=meta)
+
+        assert unscaled_size(record, src) == expect
+
+    @pytest.mark.asyncio
+    async def test_corrupt_file_has_no_size(self, tmp_path: Path) -> None:
+        """读不出尺寸 (破损图) 时返回 None, 由调用方按无判据处理, 不退回假尺寸."""
+        src = tmp_path / "resources" / "img.jpg"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(b"not-an-image")
+        record = Resource(url="https://s/i.jpg", file_path="img.jpg", meta={"sr": {"scale": 2}})
+
+        assert unscaled_size(record, src) is None
+
+
+class TestExtrafanartConcurrency:
+    """剧照按站点整批下载, 每张写完都要借连接落记录; 不设上限时一个站点就能占满连接池."""
+
+    @pytest.mark.asyncio
+    async def test_bounds_inflight_downloads(
+        self, resource_store: ResourceStore, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """在途下载数不超过上限: 并发度即连接占用的上界, 同进程的整理不必排队等连接."""
+        client = AsyncMock()
+        client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
+        inflight = 0
+        peak = 0
+
+        async def download(url: str, dest: Path, **_kwargs: object) -> bool:
+            nonlocal inflight, peak
+            inflight += 1
+            peak = max(peak, inflight)
+            await asyncio.sleep(0.05)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"jpeg-bytes")
+            inflight -= 1
+            return True
+
+        client.download = AsyncMock(side_effect=download)
+        urls = [f"https://img.example.com/still/{i}.jpg" for i in range(EXTRAFANART_CONCURRENCY * 3)]
+
+        paths = await resource_store.acquire_extrafanart({"dmm": urls}, ["dmm"], client)
+
+        assert len(paths) == len(urls)
+        assert peak <= EXTRAFANART_CONCURRENCY
+        assert peak > 1  # 上限是限流不是串行: 改成 1 时上一行仍绿, 这一行才钉得住
+
+    @pytest.mark.asyncio
+    async def test_failed_site_falls_through_to_next(self, resource_store: ResourceStore) -> None:
+        """本站全失败才换下一个站点; 并发上限不改变站点顺序与「有结果即停」."""
+        client = AsyncMock()
+        client.resolve_final_url = AsyncMock(side_effect=lambda url, **_: url)
+
+        async def download(url: str, dest: Path, **_kwargs: object) -> bool:
+            if "bad" in url:
+                return False
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"jpeg-bytes")
+            return True
+
+        client.download = AsyncMock(side_effect=download)
+        urls_by_site = {
+            "dmm": ["https://img.example.com/bad/1.jpg"],
+            "javdb": ["https://img.example.com/ok/2.jpg", "https://img.example.com/ok/3.jpg"],
+        }
+
+        paths = await resource_store.acquire_extrafanart(urls_by_site, ["dmm", "javdb"], client)
+
+        assert len(paths) == 2
 
 
 def _siblings(dest: Path) -> list[Path]:

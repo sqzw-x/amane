@@ -31,7 +31,7 @@ CrawlerFactory (缓存实例)
 
 ## Crawler 基类
 
-`crawlers/base.py::Crawler` 是 Template Method: 公开 `fetch()` (负责日志; HTTP / 拦截失败冒泡 `SourceError`), 子类实现 `_search` (番号 → URL) 与 `_scrape` (URL → `MediaMetadata`); 特殊源可直接 override `fetch()`. `profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL; `__init__` 在 `profile()` 之后自动合并配置, 子类不得再次调用. 外部来源不要求继承 `Crawler`, 契约见 [plugins.md](plugins.md).
+`crawlers/base.py::Crawler` 是 Template Method: 公开 `fetch()` (负责日志; HTTP / 拦截失败冒泡 `SourceError`), 子类实现 `_search` (番号 → URL) 与 `_scrape` (URL → `MediaMetadata`); 特殊源可直接 override `fetch()`. `_search` 交出的地址只服务取详情, 与面向用户的 `source_url` 是两回事: 后者必须是浏览器可读的详情页, 没有可读页面的来源不给链接, 不退回接口地址. `profile()` 类方法给出内置来源 ID / `base_url` / 能力与性别 / 可选 cookies 与限速 URL; `__init__` 在 `profile()` 之后自动合并配置, 子类不得再次调用. 外部来源不要求继承 `Crawler`, 契约见 [plugins.md](plugins.md).
 
 ## 连通性探测
 

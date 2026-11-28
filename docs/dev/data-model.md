@@ -47,8 +47,7 @@ Metadata 列表与 `/media` 文件行的角标与筛选: 有码 / 无码取条�
 |----------|---------|----------|
 | 单源字段 (`title`, `studio`, `plot`, ...) | 沿链取首个非空值; 列表型 (演员 / 标签 / 导演) 整份列表取首个非空 | 覆盖大多数场景 | 覆盖大多数场景 |
 | 聚合类 URL (`poster_urls`, `thumb_urls`, ...) | list, 按字段站点顺序拼接各站非空值 (相同 URL 保留首次), 物化后成功者前置 (见 [task-system.md](task-system.md)) | 下载时顺序尝试, 某站失效不需重新刮削 |
-| `extrafanart_urls` | `dict[site, list[url]]` 按站点分组 | 剧照集合是站点特异的, 扁平合并会丢失站点上下文 |
-| `scores` | `dict[site, score]` | 不同评分体系 (5 分 vs 100 分) 需保留来源供前端分列展示 |
+| `extrafanart_urls` / `scores` | `dict[site, …]` 按站点分组; **首项即取值** (剧照集与单值评分都取第一个站点) | 集合与量表都站点特异. 顺序参与真值: 剧照的键序变化必须落库并通知下游; 评分的键序变化只需落库 |
 | `raw` | `{site: {field: value}}` 原始快照 | 支持离线重新聚合与站点级复用 (见 [task-system.md](task-system.md)) |
 
 长文本 (`plot` / 演员 `overview`) 存**纯文本**: 上游的 HTML 片段、HTML 实体、异体空白 (NBSP / 全角空格)、XML 非法字符在入库前归一, HTML 换行与段落变成 `\n` 与空行. 归一必须幂等, 只在聚合输出与落库写入两处发生 (见 `utils/text.py`), 因此 `raw` 快照、merge 输入与库内值是同一份规范文本; 消费端 (NFO 写出、前端) 不识别 HTML. 存量行在下次写入时被清理.
@@ -129,7 +128,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 
 `Resource.url` UNIQUE, 作**通用 locator key**: 原始外部图用真实外部 URL, 派生裁剪用合成串 `derived:{sha256(src_url)}:crop:{args}`. 手动裁切写入派生 Resource: 海报替换 `poster_urls`, 演员头像前插 `image_urls` 并保留原图; 均**不**修改库路径海报 (ORGANIZE 再复制). 文件路径相对 `{data_dir}/resources/`, 扩展名取 URL 后缀 (无后缀为 `.bin`, 派生资源由 `ext` 指定); `mime_type` 在入库与就地超分后按内容判定 (见 `src/amane/media/file_type.py::detect_media_type`), 判不出为 `NULL` — 存量行的值可能来自 URL 后缀, 读取方遇 `NULL` 或 `application/octet-stream` 须按内容复核.
 
-`meta` (JSON, 默认 `{}`) 记可逆来源与处理标记: 裁剪记 `{'op':'crop','src':底层locator,'args':str}` (不记内部 URL); `args` 为像素框, 顺时针旋转非 0 时追加 `:r90` — 键必须覆盖角度, 否则换角度命中旧结果. 超分追加 `{'sr':{tool,model,scale}}`, **就地覆盖**文件 (URL 不变).
+`meta` (JSON, 默认 `{}`) 记可逆来源与处理标记: 裁剪记 `{'op':'crop','src':底层locator,'args':str}` (不记内部 URL); `args` 为像素框, 顺时针旋转非 0 时追加 `:r90` — 键必须覆盖角度, 否则换角度命中旧结果. 超分追加 `sr` 标记, **就地覆盖**文件 (URL 不变); 判裁切按它记的倍率从盘上尺寸除回超分前 (键见 `src/amane/db/models.py::Resource.meta`), 存量行与新增行同一口径.
 
 **按引用回收**: 不是 LRU 缓存. 刮削换 URL / 改裁剪参数后旧条目留到 CLEANUP 回收未引用项 (含派生). 原始像素须 invalidate 重下 (就地超分后不可恢复). 见 [task-system.md](task-system.md) CLEANUP. `content_hash` 兼作 ETag, 见 [api.md](api.md); 同一 locator 的写入按 locator 串行 (`ResourceStore._serialized`), 先写文件再写记录, 二者恒对应盘上那份字节.
 
@@ -150,7 +149,7 @@ PATCH 三态: **省略键** = 不更新 (`exclude_unset`); **显式值** = 写�
 | `alias` | 源名映射到目标名; **表内保持单跳规范形** (写入时压缩入边, apply 不递归). 演员不使用该规则, 由 `ActorAlias` 行承担 |
 | `block` | 源名永久剔除; 指向该名的 alias 入边一并压成 block |
 
-规则在投影重建之前对六个分类真值字段执行 (不修改 `raw`); 演员只有 block 会命中. 目录 API 的 rename / merge 对非演员写 alias 并修改已有 Metadata, delete 写 block 后从真值剔除再删实体. 三条治理路径均按最终真值维护投影, 仅批量写回变化的真值列; 实体改名后须独立判断投影是否仍有效, 真值未变不代表关联可保留. `user_tag` 与刮削隔离, 硬删且不写入规则表. 名称大小写敏感, 与源站原样一致, 不做模糊合并. `Actor` / `Director` 为一等实体, 无影片关联时**不自动删除**, 用户显式删除时删除实体并写 block. 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载, 人物与目录实体保留.
+规则对六个分类真值字段执行 (不修改 `raw`), 两处生效: **取值期**在聚合沿字段链选值时收敛 (被剔除的取值不算命中, 继续回退) 于系列 / 制作商 / 发行商 / 标签 / 导演五个字段; **写库期**在投影重建之前再执行一次, 兜住演员、PATCH / merge 这类不经聚合的写入. 演员不走取值期: 规则登记实体展示名而源站只给原始名, 解析要查别名表, 因此演员被剔除后仍只会落库为空, 不回退. 目录 API 的 rename / merge 对非演员写 alias 并修改已有 Metadata, delete 写 block 后从真值剔除再删实体. 三条治理路径均按最终真值维护投影, 仅批量写回变化的真值列; 实体改名后须独立判断投影是否仍有效, 真值未变不代表关联可保留. `user_tag` 与刮削隔离, 硬删且不写入规则表. 名称大小写敏感, 与源站原样一致, 不做模糊合并. `Actor` / `Director` 为一等实体, 无影片关联时**不自动删除**, 用户显式删除时删除实体并写 block. 删 `Metadata` 时清理关联 / 评论 / 用户 tag 挂载, 人物与目录实体保留.
 
 `directors` / `tags` / `studios` / `publishers` / `series` 另有一位用户手工状态 `is_favorite` (收藏): 与投影重建正交 — 重建只按 name get-or-create, 改名与规则都不清它, 合并时源的收藏并入目标, 删除随实体消失. `actors` 与 `user_tags` 没有这一列: 用户标签挂载到影片与演员, 演员收藏因此由标签表达; 导演没有标签挂载点, 与其余分类实体同列. 见「用户注解」.
 

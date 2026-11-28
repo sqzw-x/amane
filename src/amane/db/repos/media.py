@@ -12,7 +12,7 @@ from ...utils.collections import unique_ids
 from ...utils.path import nfc_path
 from ..models import MediaFile, MediaFileStatus, MediaSortField, Metadata, SortOrder
 from ..repo_types import _MEDIA_SORT_COLUMNS, MediaFileUpdates, _apply_media_phase_filters, _order_clause, _utcnow
-from .base import RepositoryMixinBase, chunks
+from .base import RepositoryMixinBase, acquire_write_lock, chunks
 
 
 def _apply_path_phase(media: MediaFile) -> None:
@@ -39,6 +39,13 @@ def file_phase_of(media: MediaFile) -> FilePhase:
 class MetadataFilesSummary(NamedTuple):
     file_count: int
     phase: FilePhaseSummary
+
+
+class MediaFilePathWrite(NamedTuple):
+    """改 path 的结果: 写入成功给出 updated, 目标被别的行占用则给出 occupant."""
+
+    updated: MediaFile | None
+    occupant: MediaFile | None
 
 
 class MediaRepoMixin(RepositoryMixinBase):
@@ -215,6 +222,30 @@ class MediaRepoMixin(RepositoryMixinBase):
             await session.commit()
             await session.refresh(media)
             return media
+
+    async def update_media_file_path(self, media_id: int, path: str) -> MediaFilePathWrite:
+        """占用判定与改 path 同处一个事务, 目标已被另一行占用时不写并交回那一行.
+
+        调用方先查后写会让两个会话都看到路径空闲, 后提交者撞上 media_files.path 的 UNIQUE,
+        整个整理因此失败. 见 docs/dev/database.md.
+        """
+        target = nfc_path(path)
+        async with self._session() as session:
+            await acquire_write_lock(session)
+            result = await session.exec(select(MediaFile).where(col(MediaFile.path) == target))
+            existing = result.first()
+            if existing is not None and existing.id != media_id:
+                return MediaFilePathWrite(updated=None, occupant=existing)
+            media = await session.get(MediaFile, media_id)
+            if media is None:
+                return MediaFilePathWrite(updated=None, occupant=None)
+            media.path = target
+            _apply_path_phase(media)
+            media.updated_at = _utcnow()
+            session.add(media)
+            await session.commit()
+            await session.refresh(media)
+            return MediaFilePathWrite(updated=media, occupant=None)
 
     async def delete_media_file(self, media_id: int) -> bool:
         async with self._session() as session:

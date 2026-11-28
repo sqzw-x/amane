@@ -767,6 +767,13 @@ class AgentConfig(BaseModel):
     """单次回复的输出上限. 超过模型上限时上游拒绝请求."""
 
     rate_limit: float = Field(default=2.0, ge=0.1, le=100)
+
+    retry_initial_s: float = Field(default=1.0, ge=0.1, le=60.0)
+    """请求失败后的首次退避; 此后按固定倍数递增, 且不超过 ``retry_max_s``."""
+
+    retry_max_s: float = Field(default=60.0, ge=1.0, le=600.0)
+    """单次退避上限. 重试不设次数上限, 由用户停止回合终止."""
+
     sql_timeout_ms: int = Field(default=5000, ge=50, le=60_000, json_schema_extra={"x-hidden": True})
     """只读 SQL 执行超时 (毫秒), 不计建连; 到期即中断语句."""
 

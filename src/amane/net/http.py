@@ -442,12 +442,12 @@ class WebClient:
                 break
             wait = retries * 3 + 2 + random.uniform(-1, 1)
             retries += 1
-            logger.warning(
+            logger.info(
                 "request retry",
                 method=method,
                 url=url,
                 attempt=retries,
-                max_retries=attempts,
+                max_attempts=attempts,
                 error=failure.message if failure else None,
                 retry_in=wait,
             )

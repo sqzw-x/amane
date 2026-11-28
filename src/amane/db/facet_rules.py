@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from ..crawlers.models import MediaMetadata
+from ..enums import MetadataField
 from .models import SCRAPE_FACET_KINDS, FacetKind, FacetRuleAction, Metadata
 
 
@@ -152,5 +154,61 @@ def apply_metadata_facet_fields(meta: Metadata, rules_by_kind: RulesByKind) -> N
     write_facet_field_values(meta, facet_field_values(meta).apply_rules(rules_by_kind))
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedField:
+    """一次来源结果按规则收敛后的取值; 标量与名单互斥, 只有对应字段用得上的一项."""
+
+    value: str | None = None
+    names: list[str] | None = None
+
+    @property
+    def empty(self) -> bool:
+        """没有可写入的值; 调用方据此继续沿字段链回退."""
+        return not (self.value or self.names)
+
+
+def resolve_field_value(field: MetadataField, data: MediaMetadata, rules_by_kind: RulesByKind) -> ResolvedField:
+    """按治理规则收敛一次来源结果的某个分类字段.
+
+    非分类字段原样返回. 多值字段整份剔除后为空, 与站点没给值同样继续回退; 部分保留不触发回退.
+    演员不在此处收敛: 规则登记的是实体展示名而源站只给原始名, 解析要查别名表, 留给落库期.
+    """
+    match field:
+        case MetadataField.DIRECTORS:
+            return ResolvedField(names=apply_list(list(data.directors), rules_by_kind.get(FacetKind.DIRECTOR, {})))
+        case MetadataField.TAGS:
+            return ResolvedField(names=apply_list(list(data.tags), rules_by_kind.get(FacetKind.TAG, {})))
+        case MetadataField.SERIES:
+            return ResolvedField(value=apply_scalar(data.series, rules_by_kind.get(FacetKind.SERIES, {})))
+        case MetadataField.STUDIO:
+            return ResolvedField(value=apply_scalar(data.studio, rules_by_kind.get(FacetKind.STUDIO, {})))
+        case MetadataField.PUBLISHER:
+            return ResolvedField(value=apply_scalar(data.publisher, rules_by_kind.get(FacetKind.PUBLISHER, {})))
+        case _:
+            return ResolvedField(value=getattr(data, field, None))
+
+
 def empty_rules_by_kind() -> dict[FacetKind, dict[str, RuleEntry]]:
     return {kind: {} for kind in SCRAPE_FACET_KINDS}
+
+
+type RuleRow = tuple[FacetKind, str, FacetRuleAction, str | None, FacetRuleAction | None]
+
+
+def rules_from_rows(rows: Iterable[RuleRow]) -> dict[FacetKind, dict[str, RuleEntry]]:
+    """定向查询结果转成规则表. 每行是 (kind, source_name, action, target_name, target_action).
+
+    target_action 是 alias 目标的 action (目标行不存在时为 None); 只取一跳, 不追踪 alias 的 alias.
+    调用方须保证每行都带目标行快照 (定向读取走外连接, 全表读取在同一次结果里反查), 否则两条路径会产出不同的 ``RuleEntry``.
+    """
+    by_kind = empty_rules_by_kind()
+    for kind, source_name, action, target_name, target_action in rows:
+        if kind not in SCRAPE_FACET_KINDS:
+            continue
+        resolved = FacetRuleAction(action)
+        if resolved == FacetRuleAction.ALIAS and target_action == FacetRuleAction.BLOCK:
+            resolved = FacetRuleAction.BLOCK
+        by_kind[kind][source_name] = RuleEntry(
+            action=resolved, target_name=None if resolved == FacetRuleAction.BLOCK else target_name
+        )
+    return by_kind

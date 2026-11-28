@@ -520,8 +520,11 @@ class FacetsRepoMixin(RepositoryMixinBase):
             await session.commit()
             return item
 
-    async def delete_facet(self, kind: FacetKind, facet_id: int) -> bool:
-        """爬取侧写 block 并从真值剔除后再删实体. user_tag 硬删挂载与实体, 不写规则. 不存在返回 False."""
+    async def delete_facet(self, kind: FacetKind, facet_id: int, *, add_rule: bool = False) -> bool:
+        """删除分类实体. ``add_rule`` 为真时另写剔除规则; 否则只删实体并在下次刮削时复活, 由用户显式选择.
+
+        user_tag 硬删挂载与实体, 不进规则表. 不存在返回 False.
+        """
         async with self._session() as session:
             await acquire_write_lock(session)
             if kind == FacetKind.USER_TAG:
@@ -532,9 +535,9 @@ class FacetsRepoMixin(RepositoryMixinBase):
                 await session.delete(tag)
                 ok = True
             elif kind in LINK_FACETS:
-                ok = await delete_link_facet(session, LINK_FACETS[kind], facet_id)
+                ok = await delete_link_facet(session, LINK_FACETS[kind], facet_id, add_rule=add_rule)
             elif kind in SCALAR_FACETS:
-                ok = await delete_scalar_facet(session, SCALAR_FACETS[kind], facet_id)
+                ok = await delete_scalar_facet(session, SCALAR_FACETS[kind], facet_id, add_rule=add_rule)
             else:
                 raise ValueError(f"unknown facet kind: {kind}")
             if ok:

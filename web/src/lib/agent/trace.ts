@@ -59,10 +59,20 @@ export type AgentTurnUsagePart = {
   readonly data: TurnTokenUsage;
 };
 
+/** 一次重试: 上游失败后按退避重发. 成功的那次不留行, 因此它总出现在已成功的产出之后.
+
+    用 `data-` 前缀: 库的 thread 只认这一族自定义部件, 别的前缀在 `thread.reset` 那一步通不过类型.
+*/
+export type AgentRetryPart = {
+  readonly type: "data-retry";
+  readonly data: { readonly attempt: number; readonly delayMs: number; readonly reason: string };
+};
+
 export type AgentPart =
   | AgentTextPart
   | AgentReasoningPart
   | AgentToolCallPart
+  | AgentRetryPart
   | AgentRequestUsagePart
   | AgentTurnUsagePart;
 
@@ -134,7 +144,8 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
       case "user_message": {
         flush();
         messages.push({
-          id: `trace-u-${messages.length}`,
+          // 沿用服务端记下的客户端消息 id: 回放被再次送回服务端时, 它据此认出这已是一条旧输入.
+          id: row.message_id ?? `trace-u-${row.seq ?? messages.length}`,
           role: "user",
           content: [{ type: "text", text: row.text }],
         });
@@ -179,6 +190,14 @@ export function foldTrace(rows: readonly TraceRow[]): AgentMessage[] {
 
       case "turn_usage":
         push(null, { type: "data-turn-usage", data: row.usage });
+        break;
+
+      case "retried":
+        // 重试不成段落: 它属于紧随其后的那次响应, 故与正文同处一段而不另起消息
+        push(null, {
+          type: "data-retry",
+          data: { attempt: row.attempt, delayMs: row.delay_ms, reason: row.reason },
+        });
         break;
 
       case "approvals":

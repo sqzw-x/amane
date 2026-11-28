@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amane"
-version = "0.29.0"
+version = "0.30.0"
 description = "Amane — media metadata management service"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -35,6 +35,7 @@ dependencies = [
     "onnxruntime>=1.31.0; sys_platform != 'darwin'",
     "tokenizers>=0.23.0",
     "pyobjc-framework-CoreML>=12.2.0; sys_platform == 'darwin'",
+    "tenacity>=9.2.1",
 ]
 
 [project.optional-dependencies]

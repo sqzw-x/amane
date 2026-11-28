@@ -147,10 +147,14 @@ def rank_sku(sku_id: str) -> tuple[int, str]:
     return (0, sku_id) if prefix is None else (list(SkuPrefix).index(prefix) + 1, sku_id)
 
 
-def preferred_number(sku_ids: Iterable[str]) -> str | None:
-    """多个 SKU 中优先级最高的那个的番号: 裸番号优先, 其后按前缀顺序; 无 SKU 时为 ``None``."""
+def preferred_sku(sku_ids: Iterable[str]) -> str | None:
+    """多个 SKU 中优先级最高的那个 SKU 本身 (不剥离前缀); 无 SKU 时为 ``None``.
+
+    商品详情页按 SKU 定位, 而站点售卖的常是同捆特典 SKU (``TKTABW-125``), 裸番号未必在售.
+    取舍键只有 ``rank_sku`` 一份; 番号由 ``strip_sku_prefix`` 从它剥出.
+    """
     candidates = [sku_id for sku_id in sku_ids if sku_id]
-    return strip_sku_prefix(min(candidates, key=rank_sku)) if candidates else None
+    return min(candidates, key=rank_sku) if candidates else None
 
 
 def build_index(entries: Sequence[SitemapEntry]) -> SitemapIndex:
@@ -244,8 +248,16 @@ class PrestigeCrawler(Crawler):
     def _sku_url(self, sku_id: str) -> str:
         return f"{self.base_url}/api/sku/item/{sku_id}"
 
-    def _product_url(self, product_uuid: str) -> str:
+    def _product_api_url(self, product_uuid: str) -> str:
+        """取详情用的 API 地址; 面向用户的来源链接另由 ``_goods_url`` 组装."""
         return f"{self.base_url}/api/product/{product_uuid}"
+
+    def _goods_url(self, product_uuid: str, sku_id: str) -> str:
+        """来源链接: 可读的商品详情页, 带 ``skuId`` 才能在多 SKU 商品上定位到本番号.
+
+        API 地址在浏览器里只能看到原始 JSON, 因此不把它当退路.
+        """
+        return f"{self.base_url}/goods/{product_uuid}?skuId={quote(sku_id)}"
 
     def _sitemap_url(self) -> str:
         return f"{self.base_url}/api/sku/sitemap"
@@ -268,7 +280,8 @@ class PrestigeCrawler(Crawler):
                 self.logger.debug(
                     "search hit", number=number, sku_id=hit.sku_id, product_uuid=hit.product_uuid, via=via
                 )
-                return self._product_url(hit.product_uuid)
+                # 检索得到的是取详情用的 API 地址, 商品页地址在 _scrape 里由 SKU 组装.
+                return self._product_api_url(hit.product_uuid)
 
         self.logger.debug("search miss", number=number)
         return None
@@ -363,10 +376,12 @@ class PrestigeCrawler(Crawler):
             return None
 
         # 番号取同捆特典 SKU 与包装 SKU 中优先级最高的那个, 剥离前缀后即原番号; 与检索同一套取舍规则.
+        # 保留 SKU 本身: 商品页按 SKU 定位, 裸番号未必在售.
         sku_list: list[dict[str, Any]] = data.get("sku") or []
-        number = preferred_number(str(sku.get("deliveryItemId", "")) for sku in sku_list)
-        if not number:
+        sku_id = preferred_sku(str(sku.get("deliveryItemId", "")) for sku in sku_list)
+        if sku_id is None:
             return None
+        number = strip_sku_prefix(sku_id)
 
         title = data.get("title")
         release = data.get("mgsStartAt") or data.get("createdAt")
@@ -430,7 +445,10 @@ class PrestigeCrawler(Crawler):
             if img_url:
                 extrafanart.append(img_url)
 
-        external_id = data.get("uuid", "")
+        # 商品页地址由 uuid 组装; 缺 uuid 时拼不出可读链接, 不给而不是退回 API 地址.
+        uuid = data.get("uuid")
+        external_id = uuid if isinstance(uuid, str) and uuid else None
+        source_url = None if external_id is None else self._goods_url(external_id, sku_id)
 
         return MediaMetadata(
             number=number,
@@ -447,6 +465,6 @@ class PrestigeCrawler(Crawler):
             thumb_urls=[thumb_url] if thumb_url else [],
             directors=directors,
             extrafanart=extrafanart,
-            source_url=url,
-            external_id=external_id or None,
+            source_url=source_url,
+            external_id=external_id,
         )

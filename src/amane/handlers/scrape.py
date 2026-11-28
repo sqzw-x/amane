@@ -3,9 +3,18 @@ from typing import TYPE_CHECKING, Protocol
 
 from structlog.contextvars import bind_contextvars
 
-from ..aggregate import SCALAR_FIELDS, AggregatedMetadata, CrawlerLike, FieldLanguage, aggregate, compile_priority
+from ..aggregate import (
+    SCALAR_FIELDS,
+    AggregatedMetadata,
+    CrawlerLike,
+    FieldLanguage,
+    RuleQuery,
+    aggregate,
+    compile_priority,
+)
 from ..crawlers.models import SearchQuery
 from ..crawlers.site_roles import builtin_descriptors
+from ..db.facet_rules import RulesByKind
 from ..db.models import TaskType
 from ..enums import ActorGender, MetadataField
 from ..media import materialize_images
@@ -125,6 +134,7 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             deferred_sites=frozenset(name for name in crawlers if name in self._partial_sources),
             last_resort_sites=frozenset(name for name in crawlers if name in self._last_resort_sources),
             previous_homepages=_previous_homepages(db_data),
+            load_rules=self._load_rules,
         )
 
         # 站点结果已由引擎 _fetch_one 逐条上报到 summary.outcomes; 这里只记录调度顺序.
@@ -235,6 +245,17 @@ class ScrapeHandler(TaskHandler[ScrapePayload, ScrapeResult]):
             ),
             followups=[*actor_followups, *organize_followups],
         )
+
+    async def _load_rules(self, names: RuleQuery) -> RulesByKind | None:
+        """按本次候选名取治理规则, 供聚合在取值前折叠分类字段.
+
+        读取失败只保证取值期不中断: 落库期仍会按本行候选名重读一次, 那一步失败照常让任务失败.
+        """
+        try:
+            return await self._repo.load_rules_for_names(names)
+        except Exception:
+            current().warning("facet rules unavailable, resolving without rules", kinds=sorted(str(k) for k in names))
+            return None
 
     def failure_result(self, payload: ScrapePayload) -> ScrapeResult | None:
         """抓取之后崩掉时, 站点明细仍要能回答"为什么刮不到"."""

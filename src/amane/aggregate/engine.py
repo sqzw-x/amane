@@ -20,12 +20,17 @@ from structlog.contextvars import bind_contextvars
 from ..config.manager import LANG_METADATA_FIELD_SET
 from ..crawlers.models import FetchOptions, FilmActor, MediaMetadata, SearchQuery
 from ..crawlers.site_roles import MULTI_LANGUAGE_SOURCE_IDS
+from ..db.facet_rules import ResolvedField, RuleEntry, RulesByKind, resolve_field_value
+from ..db.models import FacetKind
 from ..enums import ActorGender, Language, MetadataField, SiteName
 from ..observability import current, invoke_source
 from ..utils.text import normalize_long_text
 from .models import AggregatedMetadata, AggregateResult, SourcedScore
 
 type ProgressCallback = Callable[[int, int, str], Coroutine[Any, Any, None]]
+# 按候选名取治理规则; 返回 None 表示没有可用的规则来源, 此时分类字段不折叠.
+type RuleQuery = Mapping[FacetKind, Sequence[str]]
+type LoadRules = Callable[[RuleQuery], Coroutine[Any, Any, RulesByKind | None]]
 
 SCALAR_FIELDS: list[MetadataField] = [
     MetadataField.TITLE,
@@ -48,6 +53,19 @@ RAW_TO_DB_FIELD: dict[str, str] = {
 }
 
 SCALAR_FIELD_NAMES: frozenset[str] = frozenset(SCALAR_FIELDS)
+
+# 受治理规则约束的分类字段; 顺序即候选名的收集顺序.
+# 演员不在其中: 规则登记实体展示名而源站只给原始名, 解析要查别名表, 取值期不做折叠.
+RULE_FIELD_KINDS: dict[MetadataField, FacetKind] = {
+    MetadataField.DIRECTORS: FacetKind.DIRECTOR,
+    MetadataField.TAGS: FacetKind.TAG,
+    MetadataField.SERIES: FacetKind.SERIES,
+    MetadataField.STUDIO: FacetKind.STUDIO,
+    MetadataField.PUBLISHER: FacetKind.PUBLISHER,
+}
+
+FACET_RULE_FIELDS: tuple[MetadataField, ...] = tuple(RULE_FIELD_KINDS)
+
 
 URL_FIELD_MAP: dict[MetadataField, str] = {
     MetadataField.POSTER_URLS: "poster_urls",
@@ -121,6 +139,7 @@ async def aggregate(
     deferred_sites: frozenset[SourceName] = frozenset(),
     last_resort_sites: frozenset[SourceName] = frozenset(),
     previous_homepages: Sequence[str] = (),
+    load_rules: LoadRules | None = None,
 ) -> AggregateResult:
     fl = field_language or {}
     snapshots = cache or {}
@@ -136,6 +155,7 @@ async def aggregate(
         deferred_sites=deferred_sites,
         last_resort_sites=last_resort_sites,
         previous_homepages=previous_homepages,
+        load_rules=load_rules,
     )
 
     if not state.fetched:
@@ -190,6 +210,7 @@ async def execute_graph(
     deferred_sites: frozenset[SourceName] = frozenset(),
     last_resort_sites: frozenset[SourceName] = frozenset(),
     previous_homepages: Sequence[str] = (),
+    load_rules: LoadRules | None = None,
 ) -> ExecutionState:
     """两段并发请求; 段间给声明来源注入已定值单源字段与第一段已抓到的图片地址, 全部结束后按字段链拼接多源字段."""
     snapshots = db_cache or {}
@@ -217,15 +238,19 @@ async def execute_graph(
         fallback=[node.cache_key for node in fallback],
     )
 
+    queried: set[tuple[FacetKind, str]] = set()
     await _fetch_phase(state, first, query, crawlers, snapshots, None)
-    _resolve_scalars(graph, state)
+    rules = await _load_rules(load_rules, graph, state, queried)
+    _resolve_scalars(graph, state, rules)
     await _report_progress(on_progress, state, first, field_total)
 
     if second:
         # 链上未执行的节点会中断对应字段, 第二段结果不会被段间解析抢先定值.
         partial = _partial_snapshot(graph, state, first)
         await _fetch_phase(state, second, query, crawlers, snapshots, partial)
-        _resolve_scalars(graph, state)
+        # 第二段新增的名字单独补查; 第一段已定值的字段不再取值, 不重复查.
+        rules = await _load_rules(load_rules, graph, state, queried, base=rules)
+        _resolve_scalars(graph, state, rules)
         await _report_progress(on_progress, state, second, field_total)
 
     # 最后手段: 只有前面所有来源都没拿到"官网级"数据时才调用. 这类来源通常成本高 (调模型),
@@ -280,6 +305,49 @@ async def _fetch_phase(
             state.failed.append(cache_key)
 
 
+async def _load_rules(
+    load_rules: LoadRules | None,
+    graph: FetchGraph,
+    state: ExecutionState,
+    queried: set[tuple[FacetKind, str]],
+    base: RulesByKind | None = None,
+) -> RulesByKind | None:
+    """按本段已抓结果与未定值字段收集候选名, 一次取回规则; 没有候选名时不发查询.
+
+    ``queried`` 记录已发出的名字, 与命中与否无关: 规则表里没有对应行的名字同样不再重查.
+    两段的规则表经 ``base`` 合并成一份.
+    """
+    if load_rules is None:
+        return None
+    resolved = {field for field in FACET_RULE_FIELDS if field in state.result.field_sources}
+    pending = _names_to_query(pending_rule_names(graph, state.fetched, resolved), queried)
+    if not pending:
+        return base
+    for kind, found in pending.items():
+        queried.update((kind, name) for name in found)
+    fetched = await load_rules(pending)
+    if fetched is None:
+        return base
+    if base is None:
+        return fetched
+    merged: dict[FacetKind, dict[str, RuleEntry]] = {kind: dict(rules) for kind, rules in base.items()}
+    for kind, rules in fetched.items():
+        merged.setdefault(kind, {}).update(rules)
+    return merged
+
+
+def _names_to_query(
+    pending: Mapping[FacetKind, set[str]], queried: set[tuple[FacetKind, str]]
+) -> dict[FacetKind, list[str]]:
+    """去掉已查过的名字, 其余转成一次查询的候选; 空集的分组不查."""
+    out: dict[FacetKind, list[str]] = {}
+    for kind, found in pending.items():
+        rest = sorted(name for name in found if (kind, name) not in queried)
+        if rest:
+            out[kind] = rest
+    return out
+
+
 async def _report_progress(
     on_progress: ProgressCallback | None,
     state: ExecutionState,
@@ -292,8 +360,43 @@ async def _report_progress(
     await on_progress(_resolved_scalar_count(state.result), field_total, sites)
 
 
-def _resolve_scalars(graph: FetchGraph, state: ExecutionState) -> None:
-    """沿字段链取第一个非空值. 链上仍有未处理节点时中断该字段, 不取后面已返回的站."""
+def pending_rule_names(
+    graph: FetchGraph,
+    fetched: Mapping[SourceKey, MediaMetadata | None],
+    resolved: Collection[MetadataField] = (),
+) -> dict[FacetKind, set[str]]:
+    """链上尚未定值的分类字段里, 已抓结果给出的候选名, 按分类分组.
+
+    调用方据此一次查完确实会用到的规则; 已定值的字段不再取值, 它的名字也就不必查.
+    """
+    names: dict[FacetKind, set[str]] = {}
+    for field in FACET_RULE_FIELDS:
+        if field in resolved:
+            continue
+        kind = RULE_FIELD_KINDS[field]
+        found = names.setdefault(kind, set())
+        for node in graph.field_chains[field]:
+            data = fetched.get(node.cache_key)
+            if data is None:
+                continue
+            if field == MetadataField.DIRECTORS:
+                found.update(data.directors)
+            elif field == MetadataField.TAGS:
+                found.update(data.tags)
+            else:
+                value = getattr(data, field, None)
+                if value:
+                    found.add(value)
+    return {kind: found for kind, found in names.items() if found}
+
+
+def _resolve_scalars(graph: FetchGraph, state: ExecutionState, rules: RulesByKind | None = None) -> None:
+    """沿字段链取第一个非空值. 链上仍有未处理节点时中断该字段, 不取后面已返回的站.
+
+    分类字段先按治理规则收敛再判空: 被剔除的取值不算命中, 继续下一个站;
+    多值字段整份剔除后为空时同样回退, 部分保留照常采用.
+    """
+    applicable = rules or {}
     for field in SCALAR_FIELDS:
         if field in state.result.field_sources:
             continue
@@ -304,9 +407,16 @@ def _resolve_scalars(graph: FetchGraph, state: ExecutionState) -> None:
             data = state.fetched[cache_key]
             if data is None:
                 continue
-            if getattr(data, field, None):
-                _fill_scalar(state.result, field, data, cache_key)
-                break
+            if field not in FACET_RULE_FIELDS:
+                if getattr(data, field, None):
+                    _fill_scalar(state.result, field, data, cache_key)
+                    break
+                continue
+            resolved = resolve_field_value(field, data, applicable)
+            if resolved.empty:
+                continue
+            _fill_resolved(state.result, field, resolved, cache_key)
+            break
 
 
 def _resolve_lang(
@@ -459,6 +569,25 @@ def _fill_scalar(
         result.actors = [item.model_copy() for item in data.actors]
     else:
         setattr(result, field, getattr(data, field))
+    result.field_sources[field] = source_key
+
+
+def _fill_resolved(
+    result: AggregatedMetadata,
+    field: MetadataField,
+    resolved: ResolvedField,
+    source_key: SourceKey,
+) -> None:
+    """写入已按规则收敛的取值."""
+    if resolved.names is not None:
+        if field == MetadataField.DIRECTORS:
+            result.directors = list(resolved.names)
+        elif field == MetadataField.TAGS:
+            result.tags = list(resolved.names)
+        else:
+            raise ValueError(f"字段 {field} 不按名单收敛")
+    else:
+        setattr(result, field, resolved.value)
     result.field_sources[field] = source_key
 
 

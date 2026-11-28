@@ -806,6 +806,14 @@
         "label": "Max requests per second",
         "description": "See the provider's docs; too high may trigger rate limiting"
       },
+      "retry_initial_s": {
+        "label": "Retry backoff start (s)",
+        "description": "First wait before resending a failed request; doubles each time up to the cap"
+      },
+      "retry_max_s": {
+        "label": "Retry backoff cap (s)",
+        "description": "Upper bound of a single wait; retries themselves are unlimited until the run is stopped"
+      },
       "sql_timeout_ms": {
         "label": "Query timeout (ms)",
         "description": "Default timeout for queries that run without approval; queries that exceed it need user approval"

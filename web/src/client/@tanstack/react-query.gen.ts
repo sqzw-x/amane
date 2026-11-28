@@ -1357,7 +1357,10 @@ export const batchFacetsMutation = (options?: Partial<Options<BatchFacetsData>>)
 /**
  * Delete Facet
  *
- * 删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删.
+ * 删除分类并从 Metadata 真值移除该名字.
+ *
+ * ``add_rule`` 为真时另写剔除规则, 名字不会在下次刮削时复活; 否则只删实体, 由用户显式选择.
+ * user_tag 硬删, 不进规则表.
  */
 export const deleteFacetMutation = (options?: Partial<Options<DeleteFacetData>>): UseMutationOptions<DeleteFacetResponse, DeleteFacetError, Options<DeleteFacetData>> => {
     const mutationOptions: UseMutationOptions<DeleteFacetResponse, DeleteFacetError, Options<DeleteFacetData>> = {

@@ -58,7 +58,7 @@ SCRAPE **没有**「缓存命中即整体跳过爬取」的快速返回 — 完�
 
 - **建图**: handler 先把 `content_routes[type]`、稀疏 `field_priority` 与稀疏 `field_blacklist` 编成每字段站点链 (见 [config.md](config.md)); `content_routes` 是该类型资格真值, 被全部字段黑名单的站不产生节点. 站点 + 语言唯一确定一个 `FetchNode` (`cache_key`); 站点在任一字段上需要语言时统一用带语言节点.
 - **执行**: 未声明依赖的节点并发请求; 声明 `SourceTrait.NEEDS_PARTIAL` 的来源 (按来源目录的 `traits` 判定) 在第二段并发, 段间注入只读的前序聚合 (`partial_result`, 深拷贝, 内容见 [plugins.md](plugins.md)). 节点不因标量已满足而跳过. `crawlers` 映射是可用集合: 禁用插件 / 未安装第三方 / 构造失败都不在其中, 图节点直接跳过并沿链继续, 不调用 `invoke_source` (因此不会记成 unexpected).
-- **取值**: 标量沿链取第一个非空值 (判定为真值, `0` / 空串 / 空列表都算空), 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 段间另按同一顺序为 `partial_result` 装配一次图片地址, 只取第一段节点. 标量可以全空: 只要有来源返回结果, 任务仍成功. 落库跳过锁定字段, 见 [data-model.md](data-model.md).
+- **取值**: 标量沿链取第一个非空值 (判定为真值, `0` / 空串 / 空列表都算空), 空值继续回退, 链上仍有未执行节点时中断该字段; 只有非空值写入 `field_sources`. 六个分类字段先按治理规则收敛再判空, 被剔除的取值不算命中 (多值字段整份剔除才回退, 见 [data-model.md](data-model.md)); 规则按本段候选名一次查出. 聚合类字段 (URL / score / extrafanart) 在全部请求结束后按该字段 `field_chains` 拼接, 不按返回先后排列; 某站未返回或该字段为空则跳过. 段间另按同一顺序为 `partial_result` 装配一次图片地址, 只取第一段节点. 标量可以全空: 只要有来源返回结果, 任务仍成功. 落库跳过锁定字段, 见 [data-model.md](data-model.md).
 
 ## TaskHandler 契约
 
@@ -126,6 +126,7 @@ handler 之间复用的阶段逻辑, 不是一条可跳步的总管线:
 - **`scraping.download_resources`** 控制本步下载哪些类型 (thumb / poster / extrafanart / trailer).
 - **候选按序尝试, 命中即停**: 候选是同一张图的回退链, 首选成功后再下载后续地址只会把它在 Resource 里存成多份. 命中的那个置首位, 其余候选 (下载失败与未尝试) 保序留在尾部, 来源恢复后下次物化可重新尝试; 全部失败时列表保持原序. 未选中下载的类型无成败信息, 保持聚合优先级原序; extrafanart 为站点分组 dict, 不重排. `raw` 快照保持站点原始数据.
 - 裁剪海报 → 有码与无码按 `scraping.poster_ratio` 从 thumb 右侧裁切; 超分就地覆盖. 失败不阻断刮削.
+- 候选逐张比, 首位够高即停 (字段优先级只决定尝试顺序, 不保证首位最高); 全部偏矮才裁. 尺寸按超分前算, 见 [data-model.md](data-model.md) 的 `meta`.
 
 手动裁切复用同一派生通道 (`op=crop`, `args=box:…`), 见 [data-model.md](data-model.md).
 
