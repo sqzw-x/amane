@@ -1,8 +1,10 @@
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Badge,
   Box,
+  Breadcrumbs,
   Button,
   Card,
   Group,
@@ -36,7 +38,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -475,6 +477,14 @@ function TitleDetailPage() {
   return (
     // 下沿留出的空白比其余三边大得多: 滚到底时末尾的卡片不贴视口底边, 还能再滚一截.
     <Stack gap="md" pb="calc(var(--amane-vh) * 0.1)">
+      <Breadcrumbs>
+        <Anchor component={Link} to="/meta" size="sm">
+          {t("common:nav.meta")}
+        </Anchor>
+        <Text size="sm" c="dimmed">
+          {item.number}
+        </Text>
+      </Breadcrumbs>
       <Group align="flex-start" wrap="wrap" gap="lg" style={{ flexDirection: "row-reverse" }}>
         <Stack gap="xs" style={{ flex: "3 1 360px", minWidth: 280 }}>
           <div
