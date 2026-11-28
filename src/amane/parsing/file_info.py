@@ -722,7 +722,7 @@ def _detect_mosaic(basename: str) -> Mosaic | None:
     if (
         re.search(r"破解|克破|CRACKED", basename)
         or re.search(r"-U(C)?(?![A-Z0-9])", basename)
-        or re.search(r"-LTX(?![A-Z0-9])", basename)
+        or re.search(r"[-_]LTX(?![A-Z0-9])", basename)
         or re.search(r"(?<![A-Z0-9])RESTORED(?![A-Z0-9])", basename)
     ):
         return Mosaic.CRACKED

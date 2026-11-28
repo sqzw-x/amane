@@ -149,6 +149,43 @@ def test_merci_beaucoup_prefixes_reprojected_to_uncensored(tmp_path: Path) -> No
     engine.dispose()
 
 
+def test_underscore_ltx_media_file_mosaic_reprojected_from_basename(tmp_path: Path) -> None:
+    db_path = tmp_path / "migrate.db"
+    cfg = alembic_config(db_path)
+    previous, target = "dc04a8ae624e", "140a67ab3526"
+    command.upgrade(cfg, previous)
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        lib_id = _seed_library(conn)
+        conn.execute(
+            text(
+                "INSERT INTO media_files (path, status, library_id, created_at, updated_at, mosaic) "
+                "VALUES (:path, 'PENDING', :lib, '2026-01-01 00:00:00', '2026-01-01 00:00:00', :mosaic)"
+            ),
+            [
+                {"path": path, "lib": lib_id, "mosaic": mosaic}
+                for path, mosaic in [
+                    ("/media/SNOS-461_restored_LTX_wm.mp4", None),
+                    ("/media/IPX-811_ltx_restored.mp4", "UNCENSORED"),
+                    ("/media/SNOS-461_LTX2.mp4", None),
+                    ("/media/SNOS-461_LTX/video.mp4", None),
+                    ("/media/SNOS-461_restored.mp4", "LEAKED"),
+                ]
+            ],
+        )
+
+    command.upgrade(cfg, target)
+    assert _mosaics(engine) == {
+        "/media/SNOS-461_restored_LTX_wm.mp4": "CRACKED",
+        "/media/IPX-811_ltx_restored.mp4": "CRACKED",
+        "/media/SNOS-461_LTX2.mp4": None,
+        "/media/SNOS-461_LTX/video.mp4": None,
+        "/media/SNOS-461_restored.mp4": "LEAKED",
+    }
+    engine.dispose()
+
+
 def test_media_file_phase_columns_backfill_from_path(tmp_path: Path) -> None:
     db_path = tmp_path / "migrate.db"
     cfg = alembic_config(db_path)
