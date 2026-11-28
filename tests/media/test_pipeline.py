@@ -90,9 +90,9 @@ async def test_poster_cropped_when_candidate_small(resource_store: ResourceStore
     assert got is not None
     crop_res, crop_path = got
     assert crop_res.meta is not None
-    assert crop_res.meta.get("args") == "0.7000"
+    assert crop_res.meta.get("args") == "0.7060"
     poster = Image.open(crop_path)
-    assert poster.size == (376, 538)  # int(538 * 0.7), 非 int(538 * 300/420)=384
+    assert poster.size == (379, 538)  # int(538 * 0.706), 非 int(538 * 300/420)=384
 
 
 @pytest.mark.asyncio
