@@ -71,7 +71,7 @@ class TestRenameProjection:
         """新名字命中 block: 真值里名字消失, 投影不得留下指向该实体的行."""
         await repo.upsert_metadata(number="GOV-BLK-1", tags=["Doomed"])
         doomed_id = await _facet_id(repo, FacetKind.TAG, "Doomed")
-        assert await repo.delete_facet(FacetKind.TAG, doomed_id) is True
+        assert await repo.delete_facet(FacetKind.TAG, doomed_id, add_rule=True) is True
 
         meta = await repo.upsert_metadata(number="GOV-BLK-2", tags=["Old", "Keep"])
         assert meta.id is not None
@@ -266,7 +266,7 @@ class TestDeleteProjection:
         assert meta.id is not None
         doomed_id = await _facet_id(repo, FacetKind.TAG, "Doomed")
 
-        assert await repo.delete_facet(FacetKind.TAG, doomed_id) is True
+        assert await repo.delete_facet(FacetKind.TAG, doomed_id, add_rule=True) is True
 
         got = await repo.get_metadata(meta.id)
         assert got is not None

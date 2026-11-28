@@ -12,6 +12,7 @@ from amane.aggregate.actor import AggregatedActor
 from amane.db.models import (
     Actor,
     FacetKind,
+    FacetRule,
     FacetRuleAction,
     MediaFile,
     MediaFileStatus,
@@ -35,6 +36,7 @@ from amane.db.repo_types import (
     MetadataFields,
     WriteMode,
 )
+from amane.db.repos.facet_helpers import load_all_rules, load_rules_for_names
 from amane.db.repos.metadata import _merge_raw_snapshots
 from amane.enums import ActorField, ActorGender, LibraryAutomation, MetadataField
 from amane.organize.path_templates import VIDEO_TEMPLATE_DEFAULT
@@ -770,7 +772,7 @@ class TestMetadataRepo:
         await repo.update_actor(one.id, aliases=["独有名", "共享名"])
         await repo.update_actor(two.id, aliases=["共享名"])
 
-        await repo.delete_facet(FacetKind.ACTOR, one.id)
+        await repo.delete_facet(FacetKind.ACTOR, one.id, add_rule=True)
 
         meta = await repo.upsert_metadata(number="D-2", actors=["独有名", "共享名", "OK"])
         assert meta.actors == ["Two", "OK"]
@@ -1426,7 +1428,7 @@ class TestMetadataRepo:
         await repo.set_metadata_locks(meta.id, [MetadataField.ACTORS])
         actors = await repo.get_actors_by_names(["Blocked"])
         assert actors[0].id is not None
-        await repo.delete_facet(FacetKind.ACTOR, actors[0].id)
+        await repo.delete_facet(FacetKind.ACTOR, actors[0].id, add_rule=True)
 
         # 绕过 delete 的剔除写回被 block 的名字, 归一路径必须仍剔除.
         async with repo._session() as session:
@@ -1687,6 +1689,76 @@ class TestActorLocks:
 
         assert await repo.get_actor_aliases(actor.id) == ["手填"]
 
+    @staticmethod
+    async def _rule(repo: Repository, kind: FacetKind, source: str, action: FacetRuleAction, target: str | None = None):
+        async with repo._session() as session:
+            session.add(FacetRule(kind=kind, source_name=source, action=action, target_name=target))
+            await session.commit()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_block_rule(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-1", series="被剔除")
+
+        assert meta.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_upsert_applies_alias_and_blocked_target(self, repo: Repository):
+        await self._rule(repo, FacetKind.SERIES, "别名", FacetRuleAction.ALIAS, "正式")
+        aliased = await repo.upsert_metadata(number="TGT-2", series="别名")
+        assert aliased.series == "正式"
+
+        await self._rule(repo, FacetKind.SERIES, "正式", FacetRuleAction.BLOCK)
+        blocked = await repo.upsert_metadata(number="TGT-3", series="别名")
+        assert blocked.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_split_alias_is_blocked(self, repo: Repository):
+        """候选名覆盖 name(alias) 拆出的展示名, 否则清洗阶段的 block 会漏查."""
+        await self._rule(repo, FacetKind.ACTOR, "废名", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-4", actors=["废名(别名)"])
+
+        assert meta.actors == []
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_update_metadata_applies_block_rule(self, repo: Repository):
+        meta = await repo.upsert_metadata(number="TGT-5", series="保留")
+        assert meta.id is not None
+        await self._rule(repo, FacetKind.SERIES, "被剔除", FacetRuleAction.BLOCK)
+
+        updated = await repo.update_metadata(meta.id, series="被剔除")
+
+        assert updated is not None and updated.series is None
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_and_parentheses_name_is_blocked(self, repo: Repository):
+        """括号拆名与别名行是两条索引路径, 交叉时同样判到展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        meta = await repo.upsert_metadata(number="TGT-8", actors=["みい(别名甲)", "保留"])
+
+        assert meta.actors == ["保留"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_actor_alias_row_display_name_is_blocked(self, repo: Repository):
+        """别名表可以把入参名映射到另一个展示名, block 判的是展示名."""
+        actor = await self._actor(repo, "Mei")
+        assert actor.id is not None
+        await repo.save_actor(actor, aliases=["みい"])
+        await self._rule(repo, FacetKind.ACTOR, "Mei", FacetRuleAction.BLOCK)
+
+        via_alias = await repo.upsert_metadata(number="TGT-6", actors=["みい"])
+        assert via_alias.actors == []
+
+        kept = await repo.upsert_metadata(number="TGT-7", actors=["みい", "别人"])
+        assert kept.actors == ["别人"]
+
     @pytest.mark.asyncio(loop_scope="function")
     async def test_save_actor_skips_locked_aliases(self, repo: Repository):
         actor = await self._actor(repo, "SaveFrozen")
@@ -1710,6 +1782,44 @@ class TestActorLocks:
         assert set(ActorField) == (set(Actor.model_fields) - identity - non_person) | {ActorField.ALIASES}
         assert set(ActorField) == set(get_type_hints(ActorPersonFields)) - non_person
         assert set(ActorField) == set(AggregatedActor.model_fields) - non_person
+
+
+class TestRuleLoadEquivalence:
+    """全表读取与定向读取须给出同一份规则, 否则两条路径的折叠结果不一致."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rows",
+        [
+            [
+                ("series", "A", FacetRuleAction.ALIAS, "B"),
+                ("series", "B", FacetRuleAction.BLOCK, None),
+                ("tag", "T", FacetRuleAction.BLOCK, None),
+                ("actor", "演员", FacetRuleAction.BLOCK, None),
+                ("user_tag", "用户标签", FacetRuleAction.BLOCK, None),
+            ],
+            [("studio", "S", FacetRuleAction.ALIAS, "S2")],
+            [],
+        ],
+        ids=["alias_to_blocked", "alias_only", "empty"],
+    )
+    async def test_same_entries(
+        self, repo: Repository, rows: list[tuple[str, str, FacetRuleAction, str | None]]
+    ) -> None:
+        async with repo._session() as session:
+            for kind, source, action, target in rows:
+                session.add(FacetRule(kind=FacetKind(kind), source_name=source, action=action, target_name=target))
+            await session.commit()
+
+        async with repo._session() as session:
+            full = await load_all_rules(session)
+            names = {kind: sorted(rules) for kind, rules in full.items() if rules}
+            targeted = await load_rules_for_names(session, names) if names else {}
+        for kind, rules in full.items():
+            assert targeted.get(kind, {}) == rules, kind
+        # user_tag 不进规则表读取面: 硬删且不写规则, 这里只锁住它不会从 SQL 路径漏出来.
+        assert FacetKind.USER_TAG not in full
+        assert FacetKind.USER_TAG not in targeted
 
 
 class TestTaskRepo:

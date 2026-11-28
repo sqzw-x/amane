@@ -161,10 +161,14 @@ async def rename_facet(kind: FacetKind, facet_id: int, req: FacetRenameRequest, 
 
 
 @router.delete("/{kind}/{facet_id}", status_code=204)
-async def delete_facet(kind: FacetKind, facet_id: int, repo: RepoDep) -> Response:
-    """删除分类. 爬取侧写入剔除规则并从 Metadata 真值移除; user_tag 硬删."""
+async def delete_facet(kind: FacetKind, facet_id: int, repo: RepoDep, add_rule: bool = False) -> Response:
+    """删除分类并从 Metadata 真值移除该名字.
+
+    ``add_rule`` 为真时另写剔除规则, 名字不会在下次刮削时复活; 否则只删实体, 由用户显式选择.
+    user_tag 硬删, 不进规则表.
+    """
     try:
-        ok = await repo.delete_facet(kind, facet_id)
+        ok = await repo.delete_facet(kind, facet_id, add_rule=add_rule)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
