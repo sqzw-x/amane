@@ -3165,7 +3165,7 @@ export const HotSettingsSchema = {
                     'extrafanart'
                 ],
                 crop_poster: true,
-                poster_ratio: 0.7,
+                poster_ratio: 0.706,
                 poster_crop_skip_ratio: 0.9,
                 jpeg_quality: 95,
                 content_routes: {
@@ -8656,7 +8656,7 @@ export const ScrapingConfigSchema = {
             maximum: 1,
             minimum: 0.3,
             title: 'Poster Ratio',
-            default: 0.7
+            default: 0.706
         },
         poster_crop_skip_ratio: {
             type: 'number',

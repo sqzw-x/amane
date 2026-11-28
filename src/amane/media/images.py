@@ -13,8 +13,9 @@ from .watermarks import load_stamp
 
 logger = structlog.get_logger()
 
-# 标准 DVD 封面约 800x538, 海报为右侧约 379x538 (≈0.704); 默认取 0.7.
-_DEFAULT_POSTER_RATIO = 0.7
+# 标准 DVD 封面约 800x538, 海报为右侧 378x536 (0.7052). 实测取 0.7 时裁出 375, 与高清海报的
+# 相关性 0.9701; 取 0.706 裁出 378, 相关性 0.9995 — 差 3px 就会带进封底边缘.
+_DEFAULT_POSTER_RATIO = 0.706
 _DEFAULT_JPEG_QUALITY = 95
 
 # 自动裁切假定封面是横版夹页: 右侧 height × poster_ratio 为竖版海报. 仅传统 JAV 类型符合;
