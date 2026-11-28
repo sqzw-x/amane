@@ -32,6 +32,7 @@ Windows 壳是 Per-Monitor V2 (`winapp/app.manifest`): 未声明时系统把 `Tr
 | 状态展示 | 每 3s 轮询 `GET /api/system/desktop`, 菜单里显示 "运行中 · v{version}" / "未连接" |
 | 打开 Web UI | 系统默认浏览器打开启动时的 base URL |
 | 打开数据目录 | `/api/system/desktop` 的 `data_dir`; 未连接时置灰 |
+| 打开关联文件 | Windows / macOS 主机提供; UI 以媒体文件 ID 请求服务端校验登记记录、安全目录与视频类型后调用系统默认播放器 |
 | 检查更新 | `GET /api/system/release`; 有新版本则打开 `html_url` |
 | 重启服务器 | `POST /api/system/restart` (仅 `supervised`), 菜单直接请求不确认 |
 | 复制 API Token | 壳拿到的 token 拷入剪贴板; 未传 (关鉴权) 时置灰 |

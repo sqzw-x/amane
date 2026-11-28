@@ -62,6 +62,14 @@ def check_directory_path(raw_path: str, safe_dirs: list[Path] | None) -> Path:
 
 
 @in_thread
+def check_file_path(raw_path: str, safe_dirs: list[Path] | None) -> Path:
+    resolved = _resolve_under_safe_dirs(raw_path, safe_dirs)
+    if not resolved.is_file():
+        raise PathValidationError(f"不是文件: {raw_path}")
+    return resolved
+
+
+@in_thread
 def check_plugin_install_path(raw_path: str, safe_dirs: list[Path] | None) -> Path:
     resolved = _resolve_under_safe_dirs(raw_path, safe_dirs)
     if resolved.is_dir():
@@ -79,6 +87,13 @@ def _http_from_path_error(exc: ValueError) -> HTTPException:
 async def validate_directory_path(raw_path: str, safe_dirs: list[Path] | None) -> Path:
     try:
         return await check_directory_path(raw_path, safe_dirs)
+    except ValueError as exc:
+        raise _http_from_path_error(exc) from exc
+
+
+async def validate_file_path(raw_path: str, safe_dirs: list[Path] | None) -> Path:
+    try:
+        return await check_file_path(raw_path, safe_dirs)
     except ValueError as exc:
         raise _http_from_path_error(exc) from exc
 
